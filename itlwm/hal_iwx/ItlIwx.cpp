@@ -4053,7 +4053,7 @@ iwx_setup_he_rates(struct iwx_softc *sc)
     struct ieee80211com *ic = &sc->sc_ic;
     
     /* enable 11ax support */
-//    ic->ic_flags |= IEEE80211_F_HEON;
+    ic->ic_flags |= IEEE80211_F_HEON;
     
     ic->ic_he_cap_elem = {
         .mac_cap_info[0] =
@@ -4076,6 +4076,9 @@ iwx_setup_he_rates(struct iwx_softc *sc)
             IEEE80211_HE_MAC_CAP5_UL_2x996_TONE_RU |
             IEEE80211_HE_MAC_CAP5_HE_DYNAMIC_SM_PS |
             IEEE80211_HE_MAC_CAP5_HT_VHT_TRIG_FRAME_RX,
+        .phy_cap_info[0] =
+            IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G |
+            IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G,
         .phy_cap_info[1] =
             IEEE80211_HE_PHY_CAP1_PREAMBLE_PUNC_RX_MASK |
             IEEE80211_HE_PHY_CAP1_DEVICE_CLASS_A |
@@ -4134,7 +4137,8 @@ iwx_setup_he_rates(struct iwx_softc *sc)
      * PPET8 set to 7
      */
     uint8_t ppe_thres[] = {0x61, 0x1c, 0xc7, 0x71};
-    memcpy(ic->ic_ppe_thres, ppe_thres, sizeof(ic->ic_ppe_thres));
+    memset(ic->ic_ppe_thres, 0, sizeof(ic->ic_ppe_thres));
+    memcpy(ic->ic_ppe_thres, ppe_thres, sizeof(ppe_thres));
 }
 
 #define IWX_MAX_RX_BA_SESSIONS 16
