@@ -54,9 +54,12 @@ jobs:
           done < <(find . -mindepth 1 -maxdepth 1 -type d -not -path "*.kext" | cut -c 3-)
         cd -
     
-    - name: Upload AutoPkg Package to Artifacts
-      uses: actions/upload-artifact@v4
+    - name: Create Release on Push
+      uses: softprops/action-gh-release@v2
       with:
-        name: ${{ env.BUILD_OUTPUT }}/alpha.zip
-        path: ${{ env.BUILD_OUTPUT }}/alpha.zip
+        prerelease: true
+        bodyFile: ReleaseNotes.md
+        files: "${{ env.BUILD_OUTPUT }}/*.zip"
+        tag: "v${{ env.ITLWM_VER }}-alpha"
+        token: ${{ secrets.GITHUB_TOKEN }}
     
