@@ -60,6 +60,6 @@ jobs:
         prerelease: true
         bodyFile: ReleaseNotes.md
         files: "${{ env.BUILD_OUTPUT }}/*.zip"
-        tag: "2.4.0"
+        tag_name: 2.4.0
         token: ${{ secrets.GITHUB_TOKEN }}
     
