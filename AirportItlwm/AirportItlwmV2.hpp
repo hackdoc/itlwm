@@ -178,7 +178,8 @@ public:
     }
     
     //scan
-    static void fakeScanDone(OSObject *owner, IOTimerEventSource *sender);
+    IOReturn startAppleScan();
+    static void scanTimeout(OSObject *owner, IOTimerEventSource *sender);
     
     //-----------------------------------------------------------------------
     // Power management support.
@@ -213,6 +214,7 @@ public:
     uint8_t power_state;
     struct ieee80211_node *fNextNodeToSend;
     bool fScanResultWrapping;
+    bool fAppleScanPending;
     IOTimerEventSource *scanSource;
     
     u_int32_t current_authtype_lower;

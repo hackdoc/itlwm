@@ -1003,7 +1003,7 @@ setPOWER(OSObject *object,
         return kIOReturnError;
     IOLog("itlwm: setPOWER: num_radios[%d]  power_state(0:%u  1:%u  2:%u  3:%u)\n", pd->num_radios, pd->power_state[0], pd->power_state[1], pd->power_state[2], pd->power_state[3]);
     if (pd->num_radios > 0) {
-        bool isRunning = (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & (IFF_UP | IFF_RUNNING)) != 0;
+        bool isRunning = (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING);
         if (pd->power_state[0] == 0) {
             changePowerStateToPriv(1);
             if (isRunning) {
@@ -1205,11 +1205,16 @@ eventHandler(struct ieee80211com *ic, int msgCode, void *data)
         case IEEE80211_EVT_STA_DEAUTH:
             interface->postMessage(APPLE80211_M_DEAUTH_RECEIVED);
             break;
-#if 0
-        case IEEE80211_EVT_SCAN_DONE:
-            interface->postMessage(APPLE80211_M_SCAN_DONE);
+        case IEEE80211_EVT_SCAN_DONE: {
+            AirportItlwm *that = OSDynamicCast(AirportItlwm, ic->ic_ac.ac_if.controller);
+            if (that && that->fAppleScanPending) {
+                that->fAppleScanPending = false;
+                if (that->scanSource)
+                    that->scanSource->cancelTimeout();
+                interface->postMessage(APPLE80211_M_SCAN_DONE);
+            }
             break;
-#endif
+        }
         default:
             break;
     }
@@ -1324,10 +1329,44 @@ getRADIO_INFO(OSObject *object, struct apple80211_radio_info_data* md)
 }
 
 IOReturn AirportItlwm::
+startAppleScan()
+{
+    struct ieee80211com *ic = fHalService->get80211Controller();
+    struct _ifnet *ifp = &ic->ic_ac.ac_if;
+
+    if (fAppleScanPending)
+        return kIOReturnSuccess;
+
+    fNextNodeToSend = NULL;
+    fScanResultWrapping = false;
+    fAppleScanPending = true;
+    if (scanSource)
+        scanSource->setTimeoutMS(15000);
+
+    if ((ic->ic_flags & (IEEE80211_F_BGSCAN | IEEE80211_F_ASCAN)) ||
+        ic->ic_state == IEEE80211_S_SCAN)
+        return kIOReturnSuccess;
+
+    if (ic->ic_state == IEEE80211_S_RUN) {
+        ieee80211_begin_cache_bgscan(ifp);
+        if (!fAppleScanPending || (ic->ic_flags & IEEE80211_F_BGSCAN))
+            return kIOReturnSuccess;
+    } else if (ic->ic_state == IEEE80211_S_INIT && ic->ic_bss != NULL &&
+               (ifp->if_flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING)) {
+        ieee80211_begin_scan(ifp);
+        return kIOReturnSuccess;
+    }
+
+    fAppleScanPending = false;
+    if (scanSource)
+        scanSource->cancelTimeout();
+    return kIOReturnBusy;
+}
+
+IOReturn AirportItlwm::
 setSCAN_REQ(OSObject *object,
                             struct apple80211_scan_data *sd)
 {
-    struct ieee80211com *ic = fHalService->get80211Controller();
 #if 0
     XYLog("%s Type: %u BSS Type: %u PHY Mode: %u Dwell time: %u Rest time: %u Num channels: %u SSID: %s BSSID: %s\n",
           __FUNCTION__,
@@ -1342,27 +1381,12 @@ setSCAN_REQ(OSObject *object,
 #endif
     if (fScanResultWrapping)
         return 22;
-    if (ic->ic_state <= IEEE80211_S_INIT)
-        return 22;
-    if (sd->scan_type == APPLE80211_SCAN_TYPE_FAST || sd->scan_type == APPLE80211_SCAN_TYPE_PASSIVE) {
-        if (scanSource) {
-            scanSource->setTimeoutMS(100);
-            scanSource->enable();
-        }
-        return kIOReturnSuccess;
-    }
-    ieee80211_begin_cache_bgscan(&ic->ic_ac.ac_if);
-    if (scanSource) {
-        scanSource->setTimeoutMS(100);
-        scanSource->enable();
-    }
-    return kIOReturnSuccess;
+    return startAppleScan();
 }
 
 IOReturn AirportItlwm::
 setSCAN_REQ_MULTIPLE(OSObject *object, struct apple80211_scan_multiple_data *sd)
 {
-    struct ieee80211com *ic = fHalService->get80211Controller();
 #if 0
     int i;
     XYLog("%s Type: %u SSID Count: %u BSSID Count: %u PHY Mode: %u Dwell time: %u Rest time: %u Num channels: %u Unk: %u\n",
@@ -1380,14 +1404,7 @@ setSCAN_REQ_MULTIPLE(OSObject *object, struct apple80211_scan_multiple_data *sd)
 #endif
     if (fScanResultWrapping)
         return 22;
-    if (ic->ic_state <= IEEE80211_S_INIT)
-        return 22;
-    ieee80211_begin_cache_bgscan(&ic->ic_ac.ac_if);
-    if (scanSource) {
-        scanSource->setTimeoutMS(100);
-        scanSource->enable();
-    }
-    return kIOReturnSuccess;
+    return startAppleScan();
 }
 
 IOReturn AirportItlwm::
@@ -1423,9 +1440,10 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
 #endif
     }
     result->asr_beacon_int = fNextNodeToSend->ni_intval;
+    result->asr_nrates = MIN(fNextNodeToSend->ni_rates.rs_nrates,
+                             sizeof(result->asr_rates) / sizeof(result->asr_rates[0]));
     for (int i = 0; i < result->asr_nrates; i++ )
         result->asr_rates[i] = fNextNodeToSend->ni_rates.rs_rates[i];
-    result->asr_nrates = fNextNodeToSend->ni_rates.rs_nrates;
     result->asr_age = (uint32_t)(airport_up_time() - fNextNodeToSend->ni_age_ts);
     result->asr_cap = fNextNodeToSend->ni_capinfo;
     result->asr_channel.version = APPLE80211_VERSION;

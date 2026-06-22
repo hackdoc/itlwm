@@ -29,6 +29,9 @@ bool AirportItlwm::init(OSDictionary *properties)
     bool ret = super::init(properties);
     awdlSyncEnable = true;
     power_state = 0;
+    fNextNodeToSend = NULL;
+    fScanResultWrapping = false;
+    fAppleScanPending = false;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
     return ret;
 }
@@ -424,7 +427,7 @@ bool AirportItlwm::start(IOService *provider)
         return false;
     }
     fWatchdogWorkLoop->addEventSource(watchdogTimer);
-    scanSource = IOTimerEventSource::timerEventSource(this, &fakeScanDone);
+    scanSource = IOTimerEventSource::timerEventSource(this, &scanTimeout);
     _fWorkloop->addEventSource(scanSource);
     scanSource->enable();
     setLinkStatus(kIONetworkLinkValid);
@@ -442,10 +445,14 @@ void AirportItlwm::watchdogAction(IOTimerEventSource *timer)
     watchdogTimer->setTimeoutMS(kWatchDogTimerPeriod);
 }
 
-void AirportItlwm::fakeScanDone(OSObject *owner, IOTimerEventSource *sender)
+void AirportItlwm::scanTimeout(OSObject *owner, IOTimerEventSource *sender)
 {
     AirportItlwm *that = (AirportItlwm *)owner;
-    that->getNetworkInterface()->postMessage(APPLE80211_M_SCAN_DONE);
+    if (!that->fAppleScanPending)
+        return;
+    that->fAppleScanPending = false;
+    if (that->getNetworkInterface())
+        that->getNetworkInterface()->postMessage(APPLE80211_M_SCAN_DONE);
 }
 
 const OSString * AirportItlwm::newVendorString() const
@@ -909,6 +916,9 @@ void AirportItlwm::setPowerStateOff()
 {
     XYLog("%s\n", __FUNCTION__);
     pmPowerState = kPowerStateOff;
+    fAppleScanPending = false;
+    if (scanSource)
+        scanSource->cancelTimeout();
     disableAdapter(fNetIf);
     pmPolicyMaker->acknowledgeSetPowerState();
 }

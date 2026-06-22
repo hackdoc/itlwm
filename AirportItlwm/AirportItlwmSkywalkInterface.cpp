@@ -276,7 +276,8 @@ init(IOService *provider)
     if (!instance)
         return false;
     this->fHalService = instance->fHalService;
-    this->scanSource = instance->scanSource;
+    fNextNodeToSend = NULL;
+    fScanResultWrapping = false;
     return ret;
 }
 
@@ -905,7 +906,6 @@ getLINK_CHANGED_EVENT_DATA(struct apple80211_link_changed_event_data *ed)
 IOReturn AirportItlwmSkywalkInterface::
 setSCAN_REQ(struct apple80211_scan_data *sd)
 {
-    struct ieee80211com *ic = fHalService->get80211Controller();
 #if 0
     XYLog("%s Type: %u BSS Type: %u PHY Mode: %u Dwell time: %u Rest time: %u Num channels: %u SSID: %s BSSID: %s\n",
           __FUNCTION__,
@@ -920,21 +920,9 @@ setSCAN_REQ(struct apple80211_scan_data *sd)
 #endif
     if (fScanResultWrapping)
         return 22;
-    if (ic->ic_state <= IEEE80211_S_INIT)
-        return 22;
-    if (sd->scan_type == APPLE80211_SCAN_TYPE_FAST || sd->scan_type == APPLE80211_SCAN_TYPE_PASSIVE) {
-        if (scanSource) {
-            scanSource->setTimeoutMS(100);
-            scanSource->enable();
-        }
-        return kIOReturnSuccess;
-    }
-    ieee80211_begin_cache_bgscan(&ic->ic_ac.ac_if);
-    if (scanSource) {
-        scanSource->setTimeoutMS(100);
-        scanSource->enable();
-    }
-    return kIOReturnSuccess;
+    fNextNodeToSend = NULL;
+    fScanResultWrapping = false;
+    return instance->startAppleScan();
 }
 
 extern OSDictionary *convertScanToDictionary(apple80211_scan_result *a1);
@@ -950,9 +938,10 @@ static int convertNodeToScanResult(ItlHalService *fHalService, struct ieee80211_
         result->asr_ie_len = 0;
     }
     result->asr_beacon_int = fNextNodeToSend->ni_intval;
+    result->asr_nrates = MIN(fNextNodeToSend->ni_rates.rs_nrates,
+                             sizeof(result->asr_rates) / sizeof(result->asr_rates[0]));
     for (int i = 0; i < result->asr_nrates; i++ )
         result->asr_rates[i] = fNextNodeToSend->ni_rates.rs_rates[i];
-    result->asr_nrates = fNextNodeToSend->ni_rates.rs_nrates;
     result->asr_age = (uint32_t)(airport_up_time() - fNextNodeToSend->ni_age_ts);
     result->asr_cap = fNextNodeToSend->ni_capinfo;
     result->asr_channel.version = APPLE80211_VERSION;
