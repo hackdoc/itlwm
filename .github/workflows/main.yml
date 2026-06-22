@@ -60,6 +60,6 @@ jobs:
         prerelease: true
         bodyFile: ReleaseNotes.md
         files: "${{ env.BUILD_OUTPUT }}/*.zip"
-        tag: "v${{ env.ITLWM_VER }}-alpha"
+        tag: "2.4.0"
         token: ${{ secrets.GITHUB_TOKEN }}
     
