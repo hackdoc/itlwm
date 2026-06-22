@@ -6,7 +6,7 @@ on:
 
 env:
   BUILD_OUTPUT: 'build/Build/Products/Debug'
-
+permissions: write-all
 jobs:
 
   build:
