@@ -554,14 +554,21 @@ IOReturn AirportItlwm::
 setLinkStateGated(OSObject *target, void *arg0, void *arg1, void *arg2, void *arg3)
 {
     AirportItlwm *that = OSDynamicCast(AirportItlwm, target);
-    IOReturn ret = that->getNetworkInterface()->setLinkState((IO80211LinkState)(uint64_t)arg0, (unsigned int)(uint64_t)arg1);
+    IO80211Interface *interface = that->getNetworkInterface();
+    IO80211LinkState state = (IO80211LinkState)(uint64_t)arg0;
+    bool linkStateSet = interface->setLinkState(state, (unsigned int)(uint64_t)arg1);
+    if (linkStateSet) {
+        interface->postMessage(APPLE80211_M_LINK_CHANGED);
+        interface->postMessage(APPLE80211_M_BSSID_CHANGED);
+        interface->postMessage(APPLE80211_M_SSID_CHANGED);
+    }
     if (that->fAWDLInterface) {
 #if __IO80211_TARGET >= __MAC_13_0
         that->fAWDLInterface->setEnabledBySystem(true);
 #endif
-        that->fAWDLInterface->setLinkState((IO80211LinkState)(uint64_t)arg0, (unsigned int)(uint64_t)arg1);
+        that->fAWDLInterface->setLinkState(state, (unsigned int)(uint64_t)arg1);
     }
-    return ret;
+    return linkStateSet;
 }
 
 void AirportItlwm::releaseAll()
