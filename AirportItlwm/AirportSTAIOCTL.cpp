@@ -1471,43 +1471,64 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
 IOReturn AirportItlwm::
 setVIRTUAL_IF_CREATE(OSObject *object, struct apple80211_virt_if_create_data* data)
 {
-    // From Ventura, the virtual interface sequence has channged, now temporary disabled the virtual interface creation because it is no functionality. This fix the issue of delaying start time of associating to AP.
-#if __IO80211_TARGET >= __MAC_13_0
-    return kIOReturnUnsupported;
-#else
     struct ether_addr addr;
-    struct apple80211_channel chann;
     XYLog("%s role=%d, bsd_name=%s, mac=%s, unk1=%d\n", __FUNCTION__, data->role, data->bsd_name,
           ether_sprintf(data->mac), data->unk1);
+
+    if (data->role == APPLE80211_VIF_AWDL) {
+        if (fAWDLInterface != NULL) {
+            XYLog("%s awdl interface already exists!\n", __FUNCTION__);
+            return kIOReturnSuccess;
+        }
+
+        memcpy(addr.octet, data->mac, sizeof(addr.octet));
+        IO80211VirtualInterface *interface = NULL;
+        if (!attachVirtualInterface(&interface, &addr, data->role, true) || interface == NULL) {
+            XYLog("%s failed to attach awdl interface\n", __FUNCTION__);
+            return kIOReturnError;
+        }
+
+        IO80211P2PInterface *awdlInterface = OSDynamicCast(IO80211P2PInterface, interface);
+        if (awdlInterface == NULL) {
+            detachVirtualInterface(interface, true);
+            XYLog("%s attached interface is not an IO80211P2PInterface\n", __FUNCTION__);
+            return kIOReturnError;
+        }
+
+        fAWDLInterface = awdlInterface;
+#if __IO80211_TARGET >= __MAC_13_0
+        fAWDLInterface->setEnabledBySystem(true);
+#endif
+        fAWDLInterface->setLinkState(kIO80211NetworkLinkUp, 0);
+        fAWDLInterface->postMessage(APPLE80211_M_LINK_CHANGED);
+        return kIOReturnSuccess;
+    }
+
+#if __IO80211_TARGET >= __MAC_13_0
+    // Ventura changed virtual interface creation. Keep unsupported P2P roles
+    // disabled so they do not delay infrastructure association.
+    return kIOReturnUnsupported;
+#else
     if (data->role == APPLE80211_VIF_P2P_DEVICE) {
         IO80211P2PInterface *inf = new IO80211P2PInterface;
         if (inf == NULL)
             return kIOReturnError;
-        memcpy(addr.octet, data->mac, 6);
-        inf->init(this, &addr, data->role, "p2p");
+        memcpy(addr.octet, data->mac, sizeof(addr.octet));
+        if (!inf->init(this, &addr, data->role, "p2p")) {
+            inf->release();
+            return kIOReturnError;
+        }
         fP2PDISCInterface = inf;
     } else if (data->role == APPLE80211_VIF_P2P_GO) {
         IO80211P2PInterface *inf = new IO80211P2PInterface;
         if (inf == NULL)
             return kIOReturnError;
-        memcpy(addr.octet, data->mac, 6);
-        inf->init(this, &addr, data->role, "p2p");
-        fP2PGOInterface = inf;
-    } else if (data->role == APPLE80211_VIF_AWDL) {
-        if (fAWDLInterface != NULL && strncmp((const char *)data->bsd_name, "awdl", 4) == 0) {
-            XYLog("%s awdl interface already exists!\n", __FUNCTION__);
-            return kIOReturnSuccess;
-        }
-        IO80211P2PInterface *inf = new IO80211P2PInterface;
-        if (inf == NULL)
+        memcpy(addr.octet, data->mac, sizeof(addr.octet));
+        if (!inf->init(this, &addr, data->role, "p2p")) {
+            inf->release();
             return kIOReturnError;
-        memcpy(addr.octet, data->mac, 6);
-        inf->init(this, &addr, data->role, "awdl");
-        chann.channel = 149;
-        chann.version = 1;
-        chann.flags = APPLE80211_C_FLAG_5GHZ | APPLE80211_C_FLAG_ACTIVE | APPLE80211_C_FLAG_80MHZ;
-        setInfraChannel(&chann);
-        fAWDLInterface = inf;
+        }
+        fP2PGOInterface = inf;
     } else {
         XYLog("%s unhandled virtual interface role type: %d\n", __FUNCTION__, data->role);
         return kIOReturnError;
@@ -1520,13 +1541,19 @@ IOReturn AirportItlwm::
 setVIRTUAL_IF_DELETE(OSObject *object, struct apple80211_virt_if_delete_data *data)
 {
     XYLog("%s bsd_name=%s\n", __FUNCTION__, data->bsd_name);
-    //TODO find vif according to the bsd_name
+    if (fAWDLInterface != NULL &&
+        (object == fAWDLInterface || strncmp((const char *)data->bsd_name, "awdl", 4) == 0)) {
+        IO80211P2PInterface *interface = fAWDLInterface;
+        fAWDLInterface = NULL;
+        interface->setLinkState(kIO80211NetworkLinkDown, 0);
+        interface->postMessage(APPLE80211_M_LINK_CHANGED);
+        return detachVirtualInterface(interface, true) ? kIOReturnSuccess : kIOReturnError;
+    }
+
     IO80211VirtualInterface *vif = OSDynamicCast(IO80211VirtualInterface, object);
     if (vif == NULL)
         return kIOReturnError;
-    detachVirtualInterface(vif, false);
-    vif->release();
-    return kIOReturnSuccess;
+    return detachVirtualInterface(vif, true) ? kIOReturnSuccess : kIOReturnError;
 }
 
 IOReturn AirportItlwm::

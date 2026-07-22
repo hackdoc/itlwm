@@ -32,6 +32,9 @@ bool AirportItlwm::init(OSDictionary *properties)
     fNextNodeToSend = NULL;
     fScanResultWrapping = false;
     fAppleScanPending = false;
+    fP2PDISCInterface = NULL;
+    fP2PGOInterface = NULL;
+    fAWDLInterface = NULL;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
     return ret;
 }
@@ -511,6 +514,12 @@ void AirportItlwm::stop(IOService *provider)
 {
     XYLog("%s\n", __FUNCTION__);
     struct _ifnet *ifp = &fHalService->get80211Controller()->ic_ac.ac_if;
+    if (fAWDLInterface != NULL) {
+        IO80211P2PInterface *interface = fAWDLInterface;
+        fAWDLInterface = NULL;
+        interface->setLinkState(kIO80211NetworkLinkDown, 0);
+        detachVirtualInterface(interface, true);
+    }
     super::stop(provider);
     disableAdapter(fNetIf);
     setLinkStatus(kIONetworkLinkValid);
@@ -561,12 +570,6 @@ setLinkStateGated(OSObject *target, void *arg0, void *arg1, void *arg2, void *ar
         interface->postMessage(APPLE80211_M_LINK_CHANGED);
         interface->postMessage(APPLE80211_M_BSSID_CHANGED);
         interface->postMessage(APPLE80211_M_SSID_CHANGED);
-    }
-    if (that->fAWDLInterface) {
-#if __IO80211_TARGET >= __MAC_13_0
-        that->fAWDLInterface->setEnabledBySystem(true);
-#endif
-        that->fAWDLInterface->setLinkState(state, (unsigned int)(uint64_t)arg1);
     }
     return linkStateSet;
 }
@@ -1022,9 +1025,17 @@ disableVirtualInterface(IO80211VirtualInterface *interface)
 IO80211VirtualInterface *AirportItlwm::
 createVirtualInterface(ether_addr *ether, UInt role)
 {
-    if (role - 1 > 3)
+#if __IO80211_TARGET >= __MAC_13_0
+    if (role != APPLE80211_VIF_AWDL)
         return super::createVirtualInterface(ether, role);
-    IO80211VirtualInterface *inf = new IO80211VirtualInterface;
+#else
+    if (role != APPLE80211_VIF_P2P_DEVICE &&
+        role != APPLE80211_VIF_P2P_CLIENT &&
+        role != APPLE80211_VIF_P2P_GO &&
+        role != APPLE80211_VIF_AWDL)
+        return super::createVirtualInterface(ether, role);
+#endif
+    IO80211P2PInterface *inf = new IO80211P2PInterface;
     if (inf) {
         if (inf->init(this, ether, role, role == APPLE80211_VIF_AWDL ? "awdl" : "p2p"))
             XYLog("%s role=%d succeed\n", __FUNCTION__, role);
