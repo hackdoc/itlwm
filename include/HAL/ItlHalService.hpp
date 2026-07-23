@@ -29,6 +29,17 @@
 
 #include <net80211/ieee80211_var.h>
 
+struct ItlActionFrameRxInfo {
+    uint8_t source[IEEE80211_ADDR_LEN];
+    uint32_t channel;
+    uint32_t channelFlags;
+    int32_t rssi;
+    uint32_t timestamp;
+};
+
+typedef void (*ItlActionFrameRxCallback)(void *, mbuf_t,
+                                         const ItlActionFrameRxInfo *);
+
 class ItlHalService : public OSObject {
     OSDeclareAbstractStructors(ItlHalService)
     
@@ -47,7 +58,11 @@ public:
     virtual ItlDriverInfo *getDriverInfo() = 0;
     
     virtual ItlDriverController *getDriverController() = 0;
-    
+
+    void setActionFrameRxCallback(ItlActionFrameRxCallback callback, void *context);
+    void inputActionFrame(mbuf_t packet, const struct ieee80211_channel *channel,
+                          int32_t rssi, uint32_t timestamp);
+
     virtual void free() override;
 
 public:
@@ -69,6 +84,8 @@ private:
     IOEthernetController *controller;
     IOCommandGate *mainCommandGate;
     IOWorkLoop *mainWorkLoop;
+    ItlActionFrameRxCallback actionFrameRxCallback;
+    void *actionFrameRxContext;
 
     lck_grp_t *inner_gp;
     lck_grp_attr_t *inner_gp_attr;

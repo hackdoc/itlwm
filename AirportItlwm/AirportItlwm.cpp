@@ -26,7 +26,8 @@ IOCommandGate *_fCommandGate;
 
 bool AirportItlwm::init(OSDictionary *properties)
 {
-    bool ret = super::init(properties);
+    if (!super::init(properties))
+        return false;
     awdlSyncEnable = true;
     power_state = 0;
     fNextNodeToSend = NULL;
@@ -35,8 +36,11 @@ bool AirportItlwm::init(OSDictionary *properties)
     fP2PDISCInterface = NULL;
     fP2PGOInterface = NULL;
     fAWDLInterface = NULL;
+    fAWDLInterfaceLock = IOLockAlloc();
+    if (fAWDLInterfaceLock == NULL)
+        return false;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
-    return ret;
+    return true;
 }
 
 #define  PCI_MSI_FLAGS        2    /* Message Control */
@@ -393,6 +397,7 @@ bool AirportItlwm::start(IOService *provider)
         return false;
     }
     fHalService->initWithController(this, _fWorkloop, _fCommandGate);
+    fHalService->setActionFrameRxCallback(inputActionFrame, this);
     fHalService->get80211Controller()->ic_event_handler = eventHandler;
     
     if (PE_parse_boot_argn("-novht", &boot_value, sizeof(boot_value)))
@@ -514,9 +519,11 @@ void AirportItlwm::stop(IOService *provider)
 {
     XYLog("%s\n", __FUNCTION__);
     struct _ifnet *ifp = &fHalService->get80211Controller()->ic_ac.ac_if;
-    if (fAWDLInterface != NULL) {
-        IO80211P2PInterface *interface = fAWDLInterface;
-        fAWDLInterface = NULL;
+    IOLockLock(fAWDLInterfaceLock);
+    IO80211P2PInterface *interface = fAWDLInterface;
+    fAWDLInterface = NULL;
+    IOLockUnlock(fAWDLInterfaceLock);
+    if (interface != NULL) {
         interface->setLinkState(kIO80211NetworkLinkDown, 0);
         detachVirtualInterface(interface, true);
     }
@@ -524,6 +531,7 @@ void AirportItlwm::stop(IOService *provider)
     disableAdapter(fNetIf);
     setLinkStatus(kIONetworkLinkValid);
     fHalService->detach(pciNub);
+    fHalService->setActionFrameRxCallback(NULL, NULL);
     ether_ifdetach(ifp);
     detachInterface(fNetIf, true);
     OSSafeReleaseNULL(fNetIf);
@@ -627,6 +635,10 @@ void AirportItlwm::free()
     if (btcProfile != NULL) {
         IOFree(btcProfile, sizeof(struct apple80211_btc_profiles_data));
         btcProfile = NULL;
+    }
+    if (fAWDLInterfaceLock != NULL) {
+        IOLockFree(fAWDLInterfaceLock);
+        fAWDLInterfaceLock = NULL;
     }
     super::free();
 }
@@ -977,12 +989,41 @@ enableFeature(IO80211FeatureCode code, void *data)
     return 102;
 }
 
+void AirportItlwm::
+inputActionFrame(void *context, mbuf_t packet, const ItlActionFrameRxInfo *info)
+{
+    AirportItlwm *that = static_cast<AirportItlwm *>(context);
+    IO80211P2PInterface *interface;
+    uint8_t metadata[0x48];
+    apple80211_channel channel;
+
+    IOLockLock(that->fAWDLInterfaceLock);
+    interface = that->fAWDLInterface;
+    if (interface == NULL) {
+        IOLockUnlock(that->fAWDLInterfaceLock);
+        mbuf_freem(packet);
+        return;
+    }
+
+    memset(metadata, 0, sizeof(metadata));
+    memcpy(metadata, info->source, sizeof(info->source));
+    channel.version = APPLE80211_VERSION;
+    channel.channel = info->channel;
+    channel.flags = ieeeChanFlag2apple(info->channelFlags, -1);
+    memcpy(&metadata[0x0c], &channel, sizeof(channel));
+    memcpy(&metadata[0x2c], &info->rssi, sizeof(info->rssi));
+    memcpy(&metadata[0x30], &info->timestamp, sizeof(info->timestamp));
+
+    interface->bpfTapInput(packet, DLT_RAW, metadata, sizeof(metadata));
+    IOLockUnlock(that->fAWDLInterfaceLock);
+}
+
 int AirportItlwm::
 outputActionFrame(OSObject *object, mbuf_t m)
 {
     XYLog("%s len=%zu\n", __FUNCTION__, mbuf_len(m));
-    mbuf_freem(m);
-    return 0;
+    freePacket(m);
+    return kIOReturnOutputDropped;
 }
 
 int AirportItlwm::

@@ -37,6 +37,8 @@ enum
 
 #define kWatchDogTimerPeriod 1000
 
+int ieeeChanFlag2apple(int flags, int bw);
+
 class AirportItlwm : public IO80211Controller {
     OSDeclareDefaultStructors(AirportItlwm)
 #define IOCTL(REQ_TYPE, REQ, DATA_TYPE) \
@@ -102,6 +104,7 @@ public:
     bool initPCIPowerManagment(IOPCIDevice *provider);
     static IOReturn tsleepHandler(OSObject* owner, void* arg0 = 0, void* arg1 = 0, void* arg2 = 0, void* arg3 = 0);
     static void eventHandler(struct ieee80211com *, int, void *);
+    static void inputActionFrame(void *, mbuf_t, const ItlActionFrameRxInfo *);
     IOReturn enableAdapter(IONetworkInterface *netif);
     void disableAdapter(IONetworkInterface *netif);
     
@@ -272,7 +275,8 @@ public:
     IO80211P2PInterface *fP2PDISCInterface;
     IO80211P2PInterface *fP2PGOInterface;
     IO80211P2PInterface *fAWDLInterface;
-    
+    IOLock *fAWDLInterfaceLock;
+
     //AWDL
     uint8_t *syncFrameTemplate;
     uint32_t syncFrameTemplateLength;

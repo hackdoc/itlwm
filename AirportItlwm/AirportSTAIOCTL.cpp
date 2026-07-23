@@ -325,7 +325,7 @@ static int ieeeChanFlag2appleScanFlagVentura(int flags)
 }
 #endif
 
-static int ieeeChanFlag2apple(int flags, int bw)
+int ieeeChanFlag2apple(int flags, int bw)
 {
     int ret = 0;
     if (flags & IEEE80211_CHAN_2GHZ)
@@ -1476,7 +1476,10 @@ setVIRTUAL_IF_CREATE(OSObject *object, struct apple80211_virt_if_create_data* da
           ether_sprintf(data->mac), data->unk1);
 
     if (data->role == APPLE80211_VIF_AWDL) {
-        if (fAWDLInterface != NULL) {
+        IOLockLock(fAWDLInterfaceLock);
+        bool exists = fAWDLInterface != NULL;
+        IOLockUnlock(fAWDLInterfaceLock);
+        if (exists) {
             XYLog("%s awdl interface already exists!\n", __FUNCTION__);
             return kIOReturnSuccess;
         }
@@ -1495,12 +1498,24 @@ setVIRTUAL_IF_CREATE(OSObject *object, struct apple80211_virt_if_create_data* da
             return kIOReturnError;
         }
 
-        fAWDLInterface = awdlInterface;
+        IOLockLock(fAWDLInterfaceLock);
+        if (fAWDLInterface == NULL) {
+            fAWDLInterface = awdlInterface;
+            awdlInterface = NULL;
+        }
+        IO80211P2PInterface *publishedInterface = fAWDLInterface;
+        publishedInterface->retain();
+        IOLockUnlock(fAWDLInterfaceLock);
+        if (awdlInterface != NULL) {
+            detachVirtualInterface(awdlInterface, true);
+            return kIOReturnSuccess;
+        }
 #if __IO80211_TARGET >= __MAC_13_0
-        fAWDLInterface->setEnabledBySystem(true);
+        publishedInterface->setEnabledBySystem(true);
 #endif
-        fAWDLInterface->setLinkState(kIO80211NetworkLinkUp, 0);
-        fAWDLInterface->postMessage(APPLE80211_M_LINK_CHANGED);
+        publishedInterface->setLinkState(kIO80211NetworkLinkUp, 0);
+        publishedInterface->postMessage(APPLE80211_M_LINK_CHANGED);
+        publishedInterface->release();
         return kIOReturnSuccess;
     }
 
@@ -1541,13 +1556,21 @@ IOReturn AirportItlwm::
 setVIRTUAL_IF_DELETE(OSObject *object, struct apple80211_virt_if_delete_data *data)
 {
     XYLog("%s bsd_name=%s\n", __FUNCTION__, data->bsd_name);
-    if (fAWDLInterface != NULL &&
-        (object == fAWDLInterface || strncmp((const char *)data->bsd_name, "awdl", 4) == 0)) {
-        IO80211P2PInterface *interface = fAWDLInterface;
+    IOLockLock(fAWDLInterfaceLock);
+    IO80211P2PInterface *interface = fAWDLInterface;
+    bool deleteAWDL = interface != NULL &&
+        (object == interface || strncmp((const char *)data->bsd_name, "awdl", 4) == 0);
+    if (deleteAWDL) {
         fAWDLInterface = NULL;
+        interface->retain();
+    }
+    IOLockUnlock(fAWDLInterfaceLock);
+    if (deleteAWDL) {
         interface->setLinkState(kIO80211NetworkLinkDown, 0);
         interface->postMessage(APPLE80211_M_LINK_CHANGED);
-        return detachVirtualInterface(interface, true) ? kIOReturnSuccess : kIOReturnError;
+        bool detached = detachVirtualInterface(interface, true);
+        interface->release();
+        return detached ? kIOReturnSuccess : kIOReturnError;
     }
 
     IO80211VirtualInterface *vif = OSDynamicCast(IO80211VirtualInterface, object);

@@ -147,7 +147,7 @@ public:
     IOReturn createAssocHistory(void);
     UInt64 createIOReporters(IOService *);
     UInt64 debugFlags(void);
-    mbuf_t dequeueTxPackets(TxPacketRequest *);
+    UInt32 dequeueTxPackets(TxPacketRequest *);
     mbuf_t dequeueTxPackets(UInt,UInt);
     void dropTxPacket(mbuf_t);
     bool efiNVRAMPublished(void *,void *,IOService *,IONotifier *);
