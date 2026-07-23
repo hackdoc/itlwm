@@ -159,6 +159,18 @@ iwm_scan_rate_n_flags(struct iwm_softc *sc, int flags, int no_cck)
         return htole32(IWL_RATE_6M_PLCP | tx_ant);
 }
 
+static bool
+iwm_scan_channel_matches_priority(struct ieee80211_channel *c, int priority)
+{
+    if (priority == 0)
+        return IEEE80211_IS_CHAN_2GHZ(c);
+    if (priority == 1)
+        return !IEEE80211_IS_CHAN_2GHZ(c) &&
+            (c->ic_flags & IEEE80211_CHAN_PASSIVE) == 0;
+    return !IEEE80211_IS_CHAN_2GHZ(c) &&
+        (c->ic_flags & IEEE80211_CHAN_PASSIVE) != 0;
+}
+
 uint8_t ItlIwm::
 iwm_lmac_scan_fill_channels(struct iwm_softc *sc,
                             struct iwm_scan_channel_cfg_lmac *chan, int n_ssids, int bgscan)
@@ -166,24 +178,31 @@ iwm_lmac_scan_fill_channels(struct iwm_softc *sc,
     struct ieee80211com *ic = &sc->sc_ic;
     struct ieee80211_channel *c;
     uint8_t nchan;
-    
-    for (nchan = 0, c = &ic->ic_channels[1];
-         c <= &ic->ic_channels[IEEE80211_CHAN_MAX] &&
-         nchan < sc->sc_capa_n_scan_channels;
-         c++) {
-        if (c->ic_flags == 0)
-            continue;
-        
-        chan->channel_num = htole16(ieee80211_mhz2ieee(c->ic_freq, 0));
-        chan->iter_count = htole16(1);
-        chan->iter_interval = 0;
-        chan->flags = htole32(IWM_UNIFIED_SCAN_CHANNEL_PARTIAL);
-        if (n_ssids != 0 && !bgscan)
-            chan->flags |= htole32(1 << 1); /* select SSID 0 */
-        chan++;
-        nchan++;
+    int priority;
+
+    for (priority = 0, nchan = 0;
+         priority < 3 && nchan < sc->sc_capa_n_scan_channels;
+         priority++) {
+        for (c = &ic->ic_channels[1];
+             c <= &ic->ic_channels[IEEE80211_CHAN_MAX] &&
+             nchan < sc->sc_capa_n_scan_channels;
+             c++) {
+            if (c->ic_flags == 0 ||
+                !iwm_scan_channel_matches_priority(c, priority))
+                continue;
+
+            chan->channel_num = htole16(ieee80211_mhz2ieee(c->ic_freq, 0));
+            chan->iter_count = htole16(n_ssids == 0 && !bgscan ? 2 : 1);
+            chan->iter_interval = 0;
+            chan->flags = htole32(IWM_UNIFIED_SCAN_CHANNEL_PARTIAL);
+            if (n_ssids != 0 && !bgscan &&
+                (c->ic_flags & IEEE80211_CHAN_PASSIVE) == 0)
+                chan->flags |= htole32(1 << 1); /* select SSID 0 */
+            chan++;
+            nchan++;
+        }
     }
-    
+
     return nchan;
 }
 
@@ -194,23 +213,30 @@ iwm_umac_scan_fill_channels(struct iwm_softc *sc,
     struct ieee80211com *ic = &sc->sc_ic;
     struct ieee80211_channel *c;
     uint8_t nchan;
-    
-    for (nchan = 0, c = &ic->ic_channels[1];
-         c <= &ic->ic_channels[IEEE80211_CHAN_MAX] &&
-         nchan < sc->sc_capa_n_scan_channels;
-         c++) {
-        if (c->ic_flags == 0)
-            continue;
-        
-        chan->channel_num = ieee80211_mhz2ieee(c->ic_freq, 0);
-        chan->iter_count = 1;
-        chan->iter_interval = htole16(0);
-        if (n_ssids != 0 && !bgscan)
-            chan->flags = htole32(1 << 0); /* select SSID 0 */
-        chan++;
-        nchan++;
+    int priority;
+
+    for (priority = 0, nchan = 0;
+         priority < 3 && nchan < sc->sc_capa_n_scan_channels;
+         priority++) {
+        for (c = &ic->ic_channels[1];
+             c <= &ic->ic_channels[IEEE80211_CHAN_MAX] &&
+             nchan < sc->sc_capa_n_scan_channels;
+             c++) {
+            if (c->ic_flags == 0 ||
+                !iwm_scan_channel_matches_priority(c, priority))
+                continue;
+
+            chan->channel_num = ieee80211_mhz2ieee(c->ic_freq, 0);
+            chan->iter_count = n_ssids == 0 && !bgscan ? 2 : 1;
+            chan->iter_interval = htole16(0);
+            if (n_ssids != 0 && !bgscan &&
+                (c->ic_flags & IEEE80211_CHAN_PASSIVE) == 0)
+                chan->flags = htole32(1 << 0); /* select SSID 0 */
+            chan++;
+            nchan++;
+        }
     }
-    
+
     return nchan;
 }
 
@@ -454,7 +480,7 @@ iwm_config_umac_scan(struct iwm_softc *sc)
     XYLog("%s\n", __FUNCTION__);
     struct ieee80211com *ic = &sc->sc_ic;
     struct iwm_scan_config *scan_config;
-    int err, nchan;
+    int err, nchan, priority;
     size_t cmd_size;
     struct ieee80211_channel *c;
     struct iwm_host_cmd hcmd = {
@@ -494,13 +520,19 @@ iwm_config_umac_scan(struct iwm_softc *sc)
     scan_config->bcast_sta_id = IWM_AUX_STA_ID;
     scan_config->channel_flags = 0;
     
-    for (c = &ic->ic_channels[1], nchan = 0;
-         c <= &ic->ic_channels[IEEE80211_CHAN_MAX] &&
-         nchan < sc->sc_capa_n_scan_channels; c++) {
-        if (c->ic_flags == 0)
-            continue;
-        scan_config->channel_array[nchan++] =
-        ieee80211_mhz2ieee(c->ic_freq, 0);
+    for (priority = 0, nchan = 0;
+         priority < 3 && nchan < sc->sc_capa_n_scan_channels;
+         priority++) {
+        for (c = &ic->ic_channels[1];
+             c <= &ic->ic_channels[IEEE80211_CHAN_MAX] &&
+             nchan < sc->sc_capa_n_scan_channels;
+             c++) {
+            if (c->ic_flags == 0 ||
+                !iwm_scan_channel_matches_priority(c, priority))
+                continue;
+            scan_config->channel_array[nchan++] =
+                ieee80211_mhz2ieee(c->ic_freq, 0);
+        }
     }
     
     scan_config->flags = htole32(IWM_SCAN_CONFIG_FLAG_ACTIVATE |
