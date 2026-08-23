@@ -929,10 +929,7 @@ iwm_rx_frame(struct iwm_softc *sc, mbuf_t m, int chanidx,
         ieee80211_release_node(ic, ni);
         return;
     }
-
-    inputActionFrame(m, &ic->ic_channels[chanidx],
-                     rxi->rxi_rssi + IWM_MIN_DBM, rxi->rxi_tstamp);
-
+    
 #if NBPFILTER > 0
     if (sc->sc_drvbpf != NULL) {
         struct iwm_rx_radiotap_header *tap = &sc->sc_rxtap;

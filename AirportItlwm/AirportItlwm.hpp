@@ -37,8 +37,6 @@ enum
 
 #define kWatchDogTimerPeriod 1000
 
-int ieeeChanFlag2apple(int flags, int bw);
-
 class AirportItlwm : public IO80211Controller {
     OSDeclareDefaultStructors(AirportItlwm)
 #define IOCTL(REQ_TYPE, REQ, DATA_TYPE) \
@@ -104,7 +102,6 @@ public:
     bool initPCIPowerManagment(IOPCIDevice *provider);
     static IOReturn tsleepHandler(OSObject* owner, void* arg0 = 0, void* arg1 = 0, void* arg2 = 0, void* arg3 = 0);
     static void eventHandler(struct ieee80211com *, int, void *);
-    static void inputActionFrame(void *, mbuf_t, const ItlActionFrameRxInfo *);
     IOReturn enableAdapter(IONetworkInterface *netif);
     void disableAdapter(IONetworkInterface *netif);
     
@@ -116,8 +113,7 @@ public:
     virtual SInt32 apple80211Request(unsigned int request_type, int request_number,
                              IO80211Interface* interface, void* data) override;
     //scan
-    IOReturn startAppleScan();
-    static void scanTimeout(OSObject *owner, IOTimerEventSource *sender);
+    static void fakeScanDone(OSObject *owner, IOTimerEventSource *sender);
     //authentication
     virtual bool useAppleRSNSupplicant(IO80211Interface *interface) override;
     virtual int outputRaw80211Packet(IO80211Interface *interface, mbuf_t m) override;
@@ -262,7 +258,6 @@ public:
     uint8_t power_state;
     struct ieee80211_node *fNextNodeToSend;
     bool fScanResultWrapping;
-    bool fAppleScanPending;
     IOTimerEventSource *scanSource;
     
     u_int32_t current_authtype_lower;
@@ -275,8 +270,7 @@ public:
     IO80211P2PInterface *fP2PDISCInterface;
     IO80211P2PInterface *fP2PGOInterface;
     IO80211P2PInterface *fAWDLInterface;
-    IOLock *fAWDLInterfaceLock;
-
+    
     //AWDL
     uint8_t *syncFrameTemplate;
     uint32_t syncFrameTemplateLength;

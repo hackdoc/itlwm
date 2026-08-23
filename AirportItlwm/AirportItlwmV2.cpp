@@ -77,14 +77,6 @@ eventHandler(struct ieee80211com *ic, int msgCode, void *data)
         case IEEE80211_EVT_STA_DEAUTH:
             interface->postMessage(APPLE80211_M_DEAUTH_RECEIVED, NULL, 0, 0);
             break;
-        case IEEE80211_EVT_SCAN_DONE:
-            if (that->fAppleScanPending) {
-                that->fAppleScanPending = false;
-                if (that->scanSource)
-                    that->scanSource->cancelTimeout();
-                interface->postMessage(APPLE80211_M_SCAN_DONE, NULL, 0, 0);
-            }
-            break;
         default:
             break;
     }
@@ -133,15 +125,11 @@ void AirportItlwm::updateLQMIfChanged()
         fNetIf->setLQM(lq);
     }
 }
-void AirportItlwm::scanTimeout(OSObject *owner, IOTimerEventSource *sender)
+void AirportItlwm::fakeScanDone(OSObject *owner, IOTimerEventSource *sender)
 {
     UInt32 msg = 0;
     AirportItlwm *that = (AirportItlwm *)owner;
-    if (!that->fAppleScanPending)
-        return;
-    that->fAppleScanPending = false;
-    if (that->fNetIf)
-        that->fNetIf->postMessage(APPLE80211_M_SCAN_DONE, &msg, 4, 0);
+    that->fNetIf->postMessage(APPLE80211_M_SCAN_DONE, &msg, 4, 0);
 }
 
 bool AirportItlwm::init(OSDictionary *properties)
@@ -150,9 +138,6 @@ bool AirportItlwm::init(OSDictionary *properties)
     bool ret = super::init(properties);
     awdlSyncEnable = true;
     power_state = 0;
-    fNextNodeToSend = NULL;
-    fScanResultWrapping = false;
-    fAppleScanPending = false;
     fLastReportedLQM = 0;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
     return ret;
@@ -307,7 +292,7 @@ bool AirportItlwm::start(IOService *provider)
         return false;
     }
     fWatchdogWorkLoop->addEventSource(watchdogTimer);
-    scanSource = IOTimerEventSource::timerEventSource(this, &scanTimeout);
+    scanSource = IOTimerEventSource::timerEventSource(this, &fakeScanDone);
     _fWorkloop->addEventSource(scanSource);
     scanSource->enable();
 
@@ -881,7 +866,7 @@ setPOWER(OSObject *object,
         return kIOReturnError;
     IOLog("itlwm: setPOWER: num_radios[%d]  power_state(0:%u  1:%u  2:%u  3:%u)\n", pd->num_radios, pd->power_state[0], pd->power_state[1], pd->power_state[2], pd->power_state[3]);
     if (pd->num_radios > 0) {
-        bool isRunning = (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING);
+        bool isRunning = (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & (IFF_UP | IFF_RUNNING)) != 0;
         if (pd->power_state[0] == 0) {
             changePowerStateToPriv(1);
             if (isRunning) {
@@ -1030,39 +1015,6 @@ IOReturn AirportItlwm::setPowerState(unsigned long powerStateOrdinal, IOService 
     return result;
 }
 
-IOReturn AirportItlwm::
-startAppleScan()
-{
-    struct ieee80211com *ic = fHalService->get80211Controller();
-    struct _ifnet *ifp = &ic->ic_ac.ac_if;
-
-    if (fAppleScanPending)
-        return kIOReturnSuccess;
-
-    fAppleScanPending = true;
-    if (scanSource)
-        scanSource->setTimeoutMS(15000);
-
-    if ((ic->ic_flags & (IEEE80211_F_BGSCAN | IEEE80211_F_ASCAN)) ||
-        ic->ic_state == IEEE80211_S_SCAN)
-        return kIOReturnSuccess;
-
-    if (ic->ic_state == IEEE80211_S_RUN) {
-        ieee80211_begin_cache_bgscan(ifp);
-        if (!fAppleScanPending || (ic->ic_flags & IEEE80211_F_BGSCAN))
-            return kIOReturnSuccess;
-    } else if (ic->ic_state == IEEE80211_S_INIT && ic->ic_bss != NULL &&
-               (ifp->if_flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING)) {
-        ieee80211_begin_scan(ifp);
-        return kIOReturnSuccess;
-    }
-
-    fAppleScanPending = false;
-    if (scanSource)
-        scanSource->cancelTimeout();
-    return kIOReturnBusy;
-}
-
 IOReturn AirportItlwm::setWakeOnMagicPacket(bool active)
 {
     magicPacketEnabled = active;
@@ -1128,9 +1080,6 @@ void AirportItlwm::setPowerStateOff()
 {
     XYLog("%s\n", __FUNCTION__);
     pmPowerState = kPowerStateOff;
-    fAppleScanPending = false;
-    if (scanSource)
-        scanSource->cancelTimeout();
     disableAdapter(bsdInterface);
     pmPolicyMaker->acknowledgeSetPowerState();
 }

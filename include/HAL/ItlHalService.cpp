@@ -26,8 +26,6 @@ initWithController(IOEthernetController *controller, IOWorkLoop *workloop, IOCom
     this->mainWorkLoop->retain();
     this->mainCommandGate = commandGate;
     this->mainCommandGate->retain();
-    this->actionFrameRxCallback = NULL;
-    this->actionFrameRxContext = NULL;
     this->inner_attr = lck_attr_alloc_init();
     this->inner_gp_attr = lck_grp_attr_alloc_init();
     this->inner_gp = lck_grp_alloc_init("itlwm_tsleep", this->inner_gp_attr);
@@ -51,43 +49,6 @@ IOWorkLoop *ItlHalService::
 getMainWorkLoop()
 {
     return this->mainWorkLoop;
-}
-
-void ItlHalService::
-setActionFrameRxCallback(ItlActionFrameRxCallback callback, void *context)
-{
-    this->actionFrameRxCallback = callback;
-    this->actionFrameRxContext = context;
-}
-
-void ItlHalService::
-inputActionFrame(mbuf_t packet, const struct ieee80211_channel *channel,
-                 int32_t rssi, uint32_t timestamp)
-{
-    struct ieee80211com *ic;
-    struct ieee80211_frame frame;
-    ItlActionFrameRxInfo rxInfo;
-    mbuf_t copy = NULL;
-
-    if (this->actionFrameRxCallback == NULL || channel == NULL ||
-        mbuf_pkthdr_len(packet) < sizeof(frame))
-        return;
-    if (mbuf_copydata(packet, 0, sizeof(frame), &frame) != 0)
-        return;
-    if ((frame.i_fc[0] & IEEE80211_FC0_VERSION_MASK) != IEEE80211_FC0_VERSION_0 ||
-        (frame.i_fc[0] & IEEE80211_FC0_TYPE_MASK) != IEEE80211_FC0_TYPE_MGT ||
-        (frame.i_fc[0] & IEEE80211_FC0_SUBTYPE_MASK) != IEEE80211_FC0_SUBTYPE_ACTION)
-        return;
-    if (mbuf_dup(packet, MBUF_DONTWAIT, &copy) != 0 || copy == NULL)
-        return;
-
-    ic = this->get80211Controller();
-    memcpy(rxInfo.source, frame.i_addr2, sizeof(rxInfo.source));
-    rxInfo.channel = ieee80211_chan2ieee(ic, channel);
-    rxInfo.channelFlags = channel->ic_flags;
-    rxInfo.rssi = rssi;
-    rxInfo.timestamp = timestamp;
-    this->actionFrameRxCallback(this->actionFrameRxContext, copy, &rxInfo);
 }
 
 void ItlHalService::
@@ -115,8 +76,6 @@ void ItlHalService::
 free()
 {
     XYLog("%s\n", __PRETTY_FUNCTION__);
-    this->actionFrameRxCallback = NULL;
-    this->actionFrameRxContext = NULL;
     if (this->mainWorkLoop) {
         this->mainWorkLoop->release();
     }

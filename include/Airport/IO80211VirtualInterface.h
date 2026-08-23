@@ -115,7 +115,7 @@ public:
     bool controllerLostPower(void);
     UInt64 createIOReporters(IOService *);
     UInt64 debugFlags(void);
-    UInt32 dequeueTxPackets(TxPacketRequest *);
+    mbuf_t dequeueTxPackets(TxPacketRequest *);
     errno_t detachIfnet(void);
     void dropTxPacket(mbuf_t);
     bool dualBandCapable(void);

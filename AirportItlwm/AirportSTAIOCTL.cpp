@@ -325,7 +325,7 @@ static int ieeeChanFlag2appleScanFlagVentura(int flags)
 }
 #endif
 
-int ieeeChanFlag2apple(int flags, int bw)
+static int ieeeChanFlag2apple(int flags, int bw)
 {
     int ret = 0;
     if (flags & IEEE80211_CHAN_2GHZ)
@@ -1003,7 +1003,7 @@ setPOWER(OSObject *object,
         return kIOReturnError;
     IOLog("itlwm: setPOWER: num_radios[%d]  power_state(0:%u  1:%u  2:%u  3:%u)\n", pd->num_radios, pd->power_state[0], pd->power_state[1], pd->power_state[2], pd->power_state[3]);
     if (pd->num_radios > 0) {
-        bool isRunning = (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING);
+        bool isRunning = (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & (IFF_UP | IFF_RUNNING)) != 0;
         if (pd->power_state[0] == 0) {
             changePowerStateToPriv(1);
             if (isRunning) {
@@ -1205,16 +1205,11 @@ eventHandler(struct ieee80211com *ic, int msgCode, void *data)
         case IEEE80211_EVT_STA_DEAUTH:
             interface->postMessage(APPLE80211_M_DEAUTH_RECEIVED);
             break;
-        case IEEE80211_EVT_SCAN_DONE: {
-            AirportItlwm *that = OSDynamicCast(AirportItlwm, ic->ic_ac.ac_if.controller);
-            if (that && that->fAppleScanPending) {
-                that->fAppleScanPending = false;
-                if (that->scanSource)
-                    that->scanSource->cancelTimeout();
-                interface->postMessage(APPLE80211_M_SCAN_DONE);
-            }
+#if 0
+        case IEEE80211_EVT_SCAN_DONE:
+            interface->postMessage(APPLE80211_M_SCAN_DONE);
             break;
-        }
+#endif
         default:
             break;
     }
@@ -1329,44 +1324,10 @@ getRADIO_INFO(OSObject *object, struct apple80211_radio_info_data* md)
 }
 
 IOReturn AirportItlwm::
-startAppleScan()
-{
-    struct ieee80211com *ic = fHalService->get80211Controller();
-    struct _ifnet *ifp = &ic->ic_ac.ac_if;
-
-    if (fAppleScanPending)
-        return kIOReturnSuccess;
-
-    fNextNodeToSend = NULL;
-    fScanResultWrapping = false;
-    fAppleScanPending = true;
-    if (scanSource)
-        scanSource->setTimeoutMS(15000);
-
-    if ((ic->ic_flags & (IEEE80211_F_BGSCAN | IEEE80211_F_ASCAN)) ||
-        ic->ic_state == IEEE80211_S_SCAN)
-        return kIOReturnSuccess;
-
-    if (ic->ic_state == IEEE80211_S_RUN) {
-        ieee80211_begin_cache_bgscan(ifp);
-        if (!fAppleScanPending || (ic->ic_flags & IEEE80211_F_BGSCAN))
-            return kIOReturnSuccess;
-    } else if (ic->ic_state == IEEE80211_S_INIT && ic->ic_bss != NULL &&
-               (ifp->if_flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING)) {
-        ieee80211_begin_scan(ifp);
-        return kIOReturnSuccess;
-    }
-
-    fAppleScanPending = false;
-    if (scanSource)
-        scanSource->cancelTimeout();
-    return kIOReturnBusy;
-}
-
-IOReturn AirportItlwm::
 setSCAN_REQ(OSObject *object,
                             struct apple80211_scan_data *sd)
 {
+    struct ieee80211com *ic = fHalService->get80211Controller();
 #if 0
     XYLog("%s Type: %u BSS Type: %u PHY Mode: %u Dwell time: %u Rest time: %u Num channels: %u SSID: %s BSSID: %s\n",
           __FUNCTION__,
@@ -1381,12 +1342,27 @@ setSCAN_REQ(OSObject *object,
 #endif
     if (fScanResultWrapping)
         return 22;
-    return startAppleScan();
+    if (ic->ic_state <= IEEE80211_S_INIT)
+        return 22;
+    if (sd->scan_type == APPLE80211_SCAN_TYPE_FAST || sd->scan_type == APPLE80211_SCAN_TYPE_PASSIVE) {
+        if (scanSource) {
+            scanSource->setTimeoutMS(100);
+            scanSource->enable();
+        }
+        return kIOReturnSuccess;
+    }
+    ieee80211_begin_cache_bgscan(&ic->ic_ac.ac_if);
+    if (scanSource) {
+        scanSource->setTimeoutMS(100);
+        scanSource->enable();
+    }
+    return kIOReturnSuccess;
 }
 
 IOReturn AirportItlwm::
 setSCAN_REQ_MULTIPLE(OSObject *object, struct apple80211_scan_multiple_data *sd)
 {
+    struct ieee80211com *ic = fHalService->get80211Controller();
 #if 0
     int i;
     XYLog("%s Type: %u SSID Count: %u BSSID Count: %u PHY Mode: %u Dwell time: %u Rest time: %u Num channels: %u Unk: %u\n",
@@ -1404,7 +1380,14 @@ setSCAN_REQ_MULTIPLE(OSObject *object, struct apple80211_scan_multiple_data *sd)
 #endif
     if (fScanResultWrapping)
         return 22;
-    return startAppleScan();
+    if (ic->ic_state <= IEEE80211_S_INIT)
+        return 22;
+    ieee80211_begin_cache_bgscan(&ic->ic_ac.ac_if);
+    if (scanSource) {
+        scanSource->setTimeoutMS(100);
+        scanSource->enable();
+    }
+    return kIOReturnSuccess;
 }
 
 IOReturn AirportItlwm::
@@ -1440,10 +1423,9 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
 #endif
     }
     result->asr_beacon_int = fNextNodeToSend->ni_intval;
-    result->asr_nrates = MIN(fNextNodeToSend->ni_rates.rs_nrates,
-                             sizeof(result->asr_rates) / sizeof(result->asr_rates[0]));
     for (int i = 0; i < result->asr_nrates; i++ )
         result->asr_rates[i] = fNextNodeToSend->ni_rates.rs_rates[i];
+    result->asr_nrates = fNextNodeToSend->ni_rates.rs_nrates;
     result->asr_age = (uint32_t)(airport_up_time() - fNextNodeToSend->ni_age_ts);
     result->asr_cap = fNextNodeToSend->ni_capinfo;
     result->asr_channel.version = APPLE80211_VERSION;
@@ -1471,79 +1453,43 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
 IOReturn AirportItlwm::
 setVIRTUAL_IF_CREATE(OSObject *object, struct apple80211_virt_if_create_data* data)
 {
-    struct ether_addr addr;
-    XYLog("%s role=%d, bsd_name=%s, mac=%s, unk1=%d\n", __FUNCTION__, data->role, data->bsd_name,
-          ether_sprintf(data->mac), data->unk1);
-
-    if (data->role == APPLE80211_VIF_AWDL) {
-        IOLockLock(fAWDLInterfaceLock);
-        bool exists = fAWDLInterface != NULL;
-        IOLockUnlock(fAWDLInterfaceLock);
-        if (exists) {
-            XYLog("%s awdl interface already exists!\n", __FUNCTION__);
-            return kIOReturnSuccess;
-        }
-
-        memcpy(addr.octet, data->mac, sizeof(addr.octet));
-        IO80211VirtualInterface *interface = NULL;
-        if (!attachVirtualInterface(&interface, &addr, data->role, true) || interface == NULL) {
-            XYLog("%s failed to attach awdl interface\n", __FUNCTION__);
-            return kIOReturnError;
-        }
-
-        IO80211P2PInterface *awdlInterface = OSDynamicCast(IO80211P2PInterface, interface);
-        if (awdlInterface == NULL) {
-            detachVirtualInterface(interface, true);
-            XYLog("%s attached interface is not an IO80211P2PInterface\n", __FUNCTION__);
-            return kIOReturnError;
-        }
-
-        IOLockLock(fAWDLInterfaceLock);
-        if (fAWDLInterface == NULL) {
-            fAWDLInterface = awdlInterface;
-            awdlInterface = NULL;
-        }
-        IO80211P2PInterface *publishedInterface = fAWDLInterface;
-        publishedInterface->retain();
-        IOLockUnlock(fAWDLInterfaceLock);
-        if (awdlInterface != NULL) {
-            detachVirtualInterface(awdlInterface, true);
-            return kIOReturnSuccess;
-        }
+    // From Ventura, the virtual interface sequence has channged, now temporary disabled the virtual interface creation because it is no functionality. This fix the issue of delaying start time of associating to AP.
 #if __IO80211_TARGET >= __MAC_13_0
-        publishedInterface->setEnabledBySystem(true);
-#endif
-        publishedInterface->setLinkState(kIO80211NetworkLinkUp, 0);
-        publishedInterface->postMessage(APPLE80211_M_LINK_CHANGED);
-        publishedInterface->release();
-        return kIOReturnSuccess;
-    }
-
-#if __IO80211_TARGET >= __MAC_13_0
-    // Ventura changed virtual interface creation. Keep unsupported P2P roles
-    // disabled so they do not delay infrastructure association.
     return kIOReturnUnsupported;
 #else
+    struct ether_addr addr;
+    struct apple80211_channel chann;
+    XYLog("%s role=%d, bsd_name=%s, mac=%s, unk1=%d\n", __FUNCTION__, data->role, data->bsd_name,
+          ether_sprintf(data->mac), data->unk1);
     if (data->role == APPLE80211_VIF_P2P_DEVICE) {
         IO80211P2PInterface *inf = new IO80211P2PInterface;
         if (inf == NULL)
             return kIOReturnError;
-        memcpy(addr.octet, data->mac, sizeof(addr.octet));
-        if (!inf->init(this, &addr, data->role, "p2p")) {
-            inf->release();
-            return kIOReturnError;
-        }
+        memcpy(addr.octet, data->mac, 6);
+        inf->init(this, &addr, data->role, "p2p");
         fP2PDISCInterface = inf;
     } else if (data->role == APPLE80211_VIF_P2P_GO) {
         IO80211P2PInterface *inf = new IO80211P2PInterface;
         if (inf == NULL)
             return kIOReturnError;
-        memcpy(addr.octet, data->mac, sizeof(addr.octet));
-        if (!inf->init(this, &addr, data->role, "p2p")) {
-            inf->release();
-            return kIOReturnError;
-        }
+        memcpy(addr.octet, data->mac, 6);
+        inf->init(this, &addr, data->role, "p2p");
         fP2PGOInterface = inf;
+    } else if (data->role == APPLE80211_VIF_AWDL) {
+        if (fAWDLInterface != NULL && strncmp((const char *)data->bsd_name, "awdl", 4) == 0) {
+            XYLog("%s awdl interface already exists!\n", __FUNCTION__);
+            return kIOReturnSuccess;
+        }
+        IO80211P2PInterface *inf = new IO80211P2PInterface;
+        if (inf == NULL)
+            return kIOReturnError;
+        memcpy(addr.octet, data->mac, 6);
+        inf->init(this, &addr, data->role, "awdl");
+        chann.channel = 149;
+        chann.version = 1;
+        chann.flags = APPLE80211_C_FLAG_5GHZ | APPLE80211_C_FLAG_ACTIVE | APPLE80211_C_FLAG_80MHZ;
+        setInfraChannel(&chann);
+        fAWDLInterface = inf;
     } else {
         XYLog("%s unhandled virtual interface role type: %d\n", __FUNCTION__, data->role);
         return kIOReturnError;
@@ -1556,27 +1502,13 @@ IOReturn AirportItlwm::
 setVIRTUAL_IF_DELETE(OSObject *object, struct apple80211_virt_if_delete_data *data)
 {
     XYLog("%s bsd_name=%s\n", __FUNCTION__, data->bsd_name);
-    IOLockLock(fAWDLInterfaceLock);
-    IO80211P2PInterface *interface = fAWDLInterface;
-    bool deleteAWDL = interface != NULL &&
-        (object == interface || strncmp((const char *)data->bsd_name, "awdl", 4) == 0);
-    if (deleteAWDL) {
-        fAWDLInterface = NULL;
-        interface->retain();
-    }
-    IOLockUnlock(fAWDLInterfaceLock);
-    if (deleteAWDL) {
-        interface->setLinkState(kIO80211NetworkLinkDown, 0);
-        interface->postMessage(APPLE80211_M_LINK_CHANGED);
-        bool detached = detachVirtualInterface(interface, true);
-        interface->release();
-        return detached ? kIOReturnSuccess : kIOReturnError;
-    }
-
+    //TODO find vif according to the bsd_name
     IO80211VirtualInterface *vif = OSDynamicCast(IO80211VirtualInterface, object);
     if (vif == NULL)
         return kIOReturnError;
-    return detachVirtualInterface(vif, true) ? kIOReturnSuccess : kIOReturnError;
+    detachVirtualInterface(vif, false);
+    vif->release();
+    return kIOReturnSuccess;
 }
 
 IOReturn AirportItlwm::

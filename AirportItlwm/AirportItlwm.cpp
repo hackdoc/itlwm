@@ -26,21 +26,11 @@ IOCommandGate *_fCommandGate;
 
 bool AirportItlwm::init(OSDictionary *properties)
 {
-    if (!super::init(properties))
-        return false;
+    bool ret = super::init(properties);
     awdlSyncEnable = true;
     power_state = 0;
-    fNextNodeToSend = NULL;
-    fScanResultWrapping = false;
-    fAppleScanPending = false;
-    fP2PDISCInterface = NULL;
-    fP2PGOInterface = NULL;
-    fAWDLInterface = NULL;
-    fAWDLInterfaceLock = IOLockAlloc();
-    if (fAWDLInterfaceLock == NULL)
-        return false;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
-    return true;
+    return ret;
 }
 
 #define  PCI_MSI_FLAGS        2    /* Message Control */
@@ -397,7 +387,6 @@ bool AirportItlwm::start(IOService *provider)
         return false;
     }
     fHalService->initWithController(this, _fWorkloop, _fCommandGate);
-    fHalService->setActionFrameRxCallback(inputActionFrame, this);
     fHalService->get80211Controller()->ic_event_handler = eventHandler;
     
     if (PE_parse_boot_argn("-novht", &boot_value, sizeof(boot_value)))
@@ -435,7 +424,7 @@ bool AirportItlwm::start(IOService *provider)
         return false;
     }
     fWatchdogWorkLoop->addEventSource(watchdogTimer);
-    scanSource = IOTimerEventSource::timerEventSource(this, &scanTimeout);
+    scanSource = IOTimerEventSource::timerEventSource(this, &fakeScanDone);
     _fWorkloop->addEventSource(scanSource);
     scanSource->enable();
     setLinkStatus(kIONetworkLinkValid);
@@ -453,14 +442,10 @@ void AirportItlwm::watchdogAction(IOTimerEventSource *timer)
     watchdogTimer->setTimeoutMS(kWatchDogTimerPeriod);
 }
 
-void AirportItlwm::scanTimeout(OSObject *owner, IOTimerEventSource *sender)
+void AirportItlwm::fakeScanDone(OSObject *owner, IOTimerEventSource *sender)
 {
     AirportItlwm *that = (AirportItlwm *)owner;
-    if (!that->fAppleScanPending)
-        return;
-    that->fAppleScanPending = false;
-    if (that->getNetworkInterface())
-        that->getNetworkInterface()->postMessage(APPLE80211_M_SCAN_DONE);
+    that->getNetworkInterface()->postMessage(APPLE80211_M_SCAN_DONE);
 }
 
 const OSString * AirportItlwm::newVendorString() const
@@ -519,19 +504,10 @@ void AirportItlwm::stop(IOService *provider)
 {
     XYLog("%s\n", __FUNCTION__);
     struct _ifnet *ifp = &fHalService->get80211Controller()->ic_ac.ac_if;
-    IOLockLock(fAWDLInterfaceLock);
-    IO80211P2PInterface *interface = fAWDLInterface;
-    fAWDLInterface = NULL;
-    IOLockUnlock(fAWDLInterfaceLock);
-    if (interface != NULL) {
-        interface->setLinkState(kIO80211NetworkLinkDown, 0);
-        detachVirtualInterface(interface, true);
-    }
     super::stop(provider);
     disableAdapter(fNetIf);
     setLinkStatus(kIONetworkLinkValid);
     fHalService->detach(pciNub);
-    fHalService->setActionFrameRxCallback(NULL, NULL);
     ether_ifdetach(ifp);
     detachInterface(fNetIf, true);
     OSSafeReleaseNULL(fNetIf);
@@ -571,15 +547,14 @@ IOReturn AirportItlwm::
 setLinkStateGated(OSObject *target, void *arg0, void *arg1, void *arg2, void *arg3)
 {
     AirportItlwm *that = OSDynamicCast(AirportItlwm, target);
-    IO80211Interface *interface = that->getNetworkInterface();
-    IO80211LinkState state = (IO80211LinkState)(uint64_t)arg0;
-    bool linkStateSet = interface->setLinkState(state, (unsigned int)(uint64_t)arg1);
-    if (linkStateSet) {
-        interface->postMessage(APPLE80211_M_LINK_CHANGED);
-        interface->postMessage(APPLE80211_M_BSSID_CHANGED);
-        interface->postMessage(APPLE80211_M_SSID_CHANGED);
+    IOReturn ret = that->getNetworkInterface()->setLinkState((IO80211LinkState)(uint64_t)arg0, (unsigned int)(uint64_t)arg1);
+    if (that->fAWDLInterface) {
+#if __IO80211_TARGET >= __MAC_13_0
+        that->fAWDLInterface->setEnabledBySystem(true);
+#endif
+        that->fAWDLInterface->setLinkState((IO80211LinkState)(uint64_t)arg0, (unsigned int)(uint64_t)arg1);
     }
-    return linkStateSet;
+    return ret;
 }
 
 void AirportItlwm::releaseAll()
@@ -635,10 +610,6 @@ void AirportItlwm::free()
     if (btcProfile != NULL) {
         IOFree(btcProfile, sizeof(struct apple80211_btc_profiles_data));
         btcProfile = NULL;
-    }
-    if (fAWDLInterfaceLock != NULL) {
-        IOLockFree(fAWDLInterfaceLock);
-        fAWDLInterfaceLock = NULL;
     }
     super::free();
 }
@@ -938,9 +909,6 @@ void AirportItlwm::setPowerStateOff()
 {
     XYLog("%s\n", __FUNCTION__);
     pmPowerState = kPowerStateOff;
-    fAppleScanPending = false;
-    if (scanSource)
-        scanSource->cancelTimeout();
     disableAdapter(fNetIf);
     pmPolicyMaker->acknowledgeSetPowerState();
 }
@@ -989,41 +957,12 @@ enableFeature(IO80211FeatureCode code, void *data)
     return 102;
 }
 
-void AirportItlwm::
-inputActionFrame(void *context, mbuf_t packet, const ItlActionFrameRxInfo *info)
-{
-    AirportItlwm *that = static_cast<AirportItlwm *>(context);
-    IO80211P2PInterface *interface;
-    uint8_t metadata[0x48];
-    apple80211_channel channel;
-
-    IOLockLock(that->fAWDLInterfaceLock);
-    interface = that->fAWDLInterface;
-    if (interface == NULL) {
-        IOLockUnlock(that->fAWDLInterfaceLock);
-        mbuf_freem(packet);
-        return;
-    }
-
-    memset(metadata, 0, sizeof(metadata));
-    memcpy(metadata, info->source, sizeof(info->source));
-    channel.version = APPLE80211_VERSION;
-    channel.channel = info->channel;
-    channel.flags = ieeeChanFlag2apple(info->channelFlags, -1);
-    memcpy(&metadata[0x0c], &channel, sizeof(channel));
-    memcpy(&metadata[0x2c], &info->rssi, sizeof(info->rssi));
-    memcpy(&metadata[0x30], &info->timestamp, sizeof(info->timestamp));
-
-    interface->bpfTapInput(packet, DLT_RAW, metadata, sizeof(metadata));
-    IOLockUnlock(that->fAWDLInterfaceLock);
-}
-
 int AirportItlwm::
 outputActionFrame(OSObject *object, mbuf_t m)
 {
     XYLog("%s len=%zu\n", __FUNCTION__, mbuf_len(m));
-    freePacket(m);
-    return kIOReturnOutputDropped;
+    mbuf_freem(m);
+    return 0;
 }
 
 int AirportItlwm::
@@ -1066,17 +1005,9 @@ disableVirtualInterface(IO80211VirtualInterface *interface)
 IO80211VirtualInterface *AirportItlwm::
 createVirtualInterface(ether_addr *ether, UInt role)
 {
-#if __IO80211_TARGET >= __MAC_13_0
-    if (role != APPLE80211_VIF_AWDL)
+    if (role - 1 > 3)
         return super::createVirtualInterface(ether, role);
-#else
-    if (role != APPLE80211_VIF_P2P_DEVICE &&
-        role != APPLE80211_VIF_P2P_CLIENT &&
-        role != APPLE80211_VIF_P2P_GO &&
-        role != APPLE80211_VIF_AWDL)
-        return super::createVirtualInterface(ether, role);
-#endif
-    IO80211P2PInterface *inf = new IO80211P2PInterface;
+    IO80211VirtualInterface *inf = new IO80211VirtualInterface;
     if (inf) {
         if (inf->init(this, ether, role, role == APPLE80211_VIF_AWDL ? "awdl" : "p2p"))
             XYLog("%s role=%d succeed\n", __FUNCTION__, role);
