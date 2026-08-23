@@ -218,11 +218,11 @@ getSSID(OSObject *object,
                         struct apple80211_ssid_data *sd)
 {
     struct ieee80211com * ic = fHalService->get80211Controller();
-    if (ic->ic_state == IEEE80211_S_RUN) {
+    if (ic->ic_state == IEEE80211_S_RUN && ic->ic_bss != NULL) {
         memset(sd, 0, sizeof(*sd));
         sd->version = APPLE80211_VERSION;
-        memcpy(sd->ssid_bytes, ic->ic_des_essid, strlen((const char*)ic->ic_des_essid));
-        sd->ssid_len = (uint32_t)strlen((const char*)ic->ic_des_essid);
+        sd->ssid_len = MIN(ic->ic_bss->ni_esslen, sizeof(sd->ssid_bytes));
+        memcpy(sd->ssid_bytes, ic->ic_bss->ni_essid, sd->ssid_len);
         return kIOReturnSuccess;
     }
     return 6;
@@ -1423,9 +1423,10 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
 #endif
     }
     result->asr_beacon_int = fNextNodeToSend->ni_intval;
+    result->asr_nrates = MIN(fNextNodeToSend->ni_rates.rs_nrates,
+                             sizeof(result->asr_rates) / sizeof(result->asr_rates[0]));
     for (int i = 0; i < result->asr_nrates; i++ )
         result->asr_rates[i] = fNextNodeToSend->ni_rates.rs_rates[i];
-    result->asr_nrates = fNextNodeToSend->ni_rates.rs_nrates;
     result->asr_age = (uint32_t)(airport_up_time() - fNextNodeToSend->ni_age_ts);
     result->asr_cap = fNextNodeToSend->ni_capinfo;
     result->asr_channel.version = APPLE80211_VERSION;
