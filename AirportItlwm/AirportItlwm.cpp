@@ -1058,13 +1058,41 @@ requestPacketTx(void *object, UInt )
     if (interface) {
         memset(&request, 0, sizeof(request));
         if (interface->getInterfaceRole() == APPLE80211_VIF_AWDL) {
-            // Do not dequeue yet.  TxPacketRequest::bufs are owned by the
-            // virtual interface after dequeueTxPackets(); the Intel TX
-            // completion path must release/report each mbuf exactly once.
-            // The existing Ethernet outputPacket() path cannot provide that
-            // contract and must not be used for AWDL frames.
-            XYLog("%s AWDL TX pending management-queue integration\n",
-                  __FUNCTION__);
+            // This is an ownership probe only.  It deliberately drops the
+            // dequeued packets instead of sending them: the current Intel
+            // firmware path has no AWDL completion adapter yet.  Keeping the
+            // probe here lets a development build validate the Skywalk
+            // dequeue/drop contract without feeding an AWDL mbuf into the
+            // ordinary STA Ethernet queue.
+            mbuf_t returned = interface->dequeueTxPackets(&request);
+            UInt16 count = request.pkt_cnt;
+            if (count > 8)
+                count = 8;
+            UInt16 dropped = 0;
+            for (UInt16 i = 0; i < count; ++i) {
+                mbuf_t packet = request.bufs[i];
+                if (packet == NULL)
+                    continue;
+                XYLog("%s AWDL probe packet[%u]=%p len=%zu flags=0x%x\n",
+                      __FUNCTION__, i, packet, mbuf_len(packet),
+                      mbuf_flags(packet));
+                interface->dropTxPacket(packet);
+                ++dropped;
+            }
+            // Some IO80211 releases return the first mbuf separately rather
+            // than mirroring it in bufs[].  Avoid releasing it twice.
+            if (returned != NULL) {
+                bool mirrored = false;
+                for (UInt16 i = 0; i < count; ++i)
+                    mirrored |= (request.bufs[i] == returned);
+                if (!mirrored) {
+                    interface->dropTxPacket(returned);
+                    ++dropped;
+                }
+            }
+            if (request.pkt_cnt != 0 || returned != NULL)
+                XYLog("%s AWDL ownership probe: pkt_cnt=%u dropped=%u\n",
+                      __FUNCTION__, request.pkt_cnt, dropped);
         }
     }
 }
