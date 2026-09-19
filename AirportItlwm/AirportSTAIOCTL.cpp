@@ -1454,8 +1454,11 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
 IOReturn AirportItlwm::
 setVIRTUAL_IF_CREATE(OSObject *object, struct apple80211_virt_if_create_data* data)
 {
-    // From Ventura, the virtual interface sequence has channged, now temporary disabled the virtual interface creation because it is no functionality. This fix the issue of delaying start time of associating to AP.
 #if __IO80211_TARGET >= __MAC_13_0
+    // Ventura+ uses the Skywalk protocol implementation in AirportItlwmV2.
+    // Keep this legacy ABI entry disabled; forwarding here would create a
+    // second interface object because this class has no Skywalk slot.
+    XYLog("%s legacy VIF_CREATE disabled on Skywalk target\n", __FUNCTION__);
     return kIOReturnUnsupported;
 #else
     struct ether_addr addr;
