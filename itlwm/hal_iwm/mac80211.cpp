@@ -3485,8 +3485,12 @@ iwm_init(struct _ifnet *ifp)
     if (sc->sc_nvm.sku_cap_11n_enable)
         iwm_setup_ht_rates(sc);
     
-    if (sc->sc_nvm.sku_cap_11ac_enable)
+    if (sc->sc_nvm.sku_cap_11ac_enable) {
         iwm_setup_vht_rates(sc);
+        XYLog("%s: 802.11ac/VHT enabled (5GHz=%d, tx_ant=0x%x, rx_ant=0x%x)\n",
+              DEVNAME(sc), sc->sc_nvm.sku_cap_band_52GHz_enable,
+              iwm_fw_valid_tx_ant(sc), iwm_fw_valid_rx_ant(sc));
+    }
     
     ifq_clr_oactive(&ifp->if_snd);
     ifq_flush(&ifp->if_snd);

@@ -10246,8 +10246,18 @@ iwx_init(struct _ifnet *ifp)
     if (sc->sc_nvm.sku_cap_11ac_enable)
         iwx_setup_vht_rates(sc);
     
-    if (sc->sc_nvm.sku_cap_11ax_enable)
+    if (sc->sc_nvm.sku_cap_11ax_enable) {
         iwx_setup_he_rates(sc);
+        // Keep the Wi-Fi 6 capability decision visible in the field log.
+        // HE is only enabled when the firmware/NVM advertises 802.11ax; do
+        // not infer it from the PCI device name.
+        XYLog("%s: 802.11ax/HE enabled (5GHz=%d, 2.4GHz=%d, tx_ant=0x%x, rx_ant=0x%x)\n",
+              DEVNAME(sc), sc->sc_nvm.sku_cap_band_52GHz_enable,
+              sc->sc_nvm.sku_cap_band_24GHz_enable,
+              iwx_fw_valid_tx_ant(sc), iwx_fw_valid_rx_ant(sc));
+    } else {
+        XYLog("%s: 802.11ax/HE unavailable in firmware/NVM\n", DEVNAME(sc));
+    }
     
     ifq_clr_oactive(&ifp->if_snd);
     ifq_flush(&ifp->if_snd);
