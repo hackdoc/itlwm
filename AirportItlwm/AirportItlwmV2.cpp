@@ -924,14 +924,12 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
     // Handle both directions here so airportd cannot leave a stale or
     // unregistered p2p/awdl object attached to the controller.
     if (cmd == APPLE80211_IOC_VIRTUAL_IF_CREATE) {
-        if (request != SIOCSA80211)
-            return kIOReturnBadArgument;
+        XYLog("%s VIF_CREATE request=%u data=%p\n", __FUNCTION__, request, data);
         return createVirtualInterfaceForSkywalk(
             (const apple80211_virt_if_create_data *)data);
     }
     if (cmd == APPLE80211_IOC_VIRTUAL_IF_DELETE) {
-        if (request != SIOCSA80211)
-            return kIOReturnBadArgument;
+        XYLog("%s VIF_DELETE request=%u data=%p\n", __FUNCTION__, request, data);
         return deleteVirtualInterfaceForSkywalk(
             (const apple80211_virt_if_delete_data *)data);
     }
