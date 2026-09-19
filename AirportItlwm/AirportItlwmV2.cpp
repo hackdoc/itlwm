@@ -313,8 +313,15 @@ bool AirportItlwm::start(IOService *provider)
         releaseAll();
         return false;
     }
+    // The parent Skywalk interface must be registered as infrastructure.
+    // AWDL is created later by airportd as a role-specific virtual child; it
+    // must not be pre-created here.  Log every lifecycle step because a
+    // deferred BSD attach leaves airportd's interface cache empty on some
+    // IO80211 revisions.
     fNetIf->setInterfaceRole(1);
     fNetIf->setInterfaceId(1);
+    XYLog("%s Skywalk parent role=%d id=1 bsd=%s\n", __FUNCTION__,
+          fNetIf->getInterfaceRole(), fNetIf->getBSDName());
     
     if (!initCCLogs()) {
         XYLog("CCLog init fail\n");
@@ -357,9 +364,15 @@ bool AirportItlwm::start(IOService *provider)
     fNetIf->mExpansionData2->fRegistrationInfo = (struct IOSkywalkEthernetInterface::RegistrationInfo *)IOMalloc(sizeof(struct IOSkywalkEthernetInterface::RegistrationInfo));
     memcpy(fNetIf->mExpansionData->fRegistrationInfo, &registInfo, sizeof(registInfo));
     memcpy(fNetIf->mExpansionData2->fRegistrationInfo, &registInfo, sizeof(registInfo));
-    if (fNetIf->getInterfaceRole() == 1)
+    if (fNetIf->getInterfaceRole() == 1) {
         fNetIf->deferBSDAttach(true);
-    fNetIf->start(this);
+        XYLog("%s deferred Skywalk BSD attach role=%d bsd=%s\n",
+              __FUNCTION__, fNetIf->getInterfaceRole(), fNetIf->getBSDName());
+    }
+    bool skywalkStarted = fNetIf->start(this);
+    XYLog("%s Skywalk parent start=%d bsd=%s role=%d enabled=%d\n",
+          __FUNCTION__, skywalkStarted, fNetIf->getBSDName(),
+          fNetIf->getInterfaceRole(), fNetIf->isInterfaceEnabled());
     
     setLinkStatus(kIONetworkLinkValid);
     if (TAILQ_EMPTY(&fHalService->get80211Controller()->ic_ess))
