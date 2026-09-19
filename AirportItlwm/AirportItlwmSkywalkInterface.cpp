@@ -267,8 +267,13 @@ void AirportItlwmSkywalkInterface::setGTK(const u_int8_t *gtk, size_t key_len, u
 IOReturn AirportItlwmSkywalkInterface::
 setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data)
 {
-    if (!data || !instance)
+    if (!data || !instance) {
+        XYLog("%s rejected data=%p instance=%p\n", __FUNCTION__, data, instance);
         return kIOReturnBadArgument;
+    }
+
+    XYLog("%s version=0x%x role=%u requested_name=%.*s\n", __FUNCTION__,
+          data->version, data->role, IFNAMSIZ, data->bsd_name);
 
     // On Ventura and newer, airportd sends this request to the Skywalk
     // interface rather than to the legacy IO80211VirtualInterface path.
@@ -288,6 +293,8 @@ init(IOService *provider)
     instance = OSDynamicCast(AirportItlwm, provider);
     if (!instance)
         return false;
+    XYLog("%s Skywalk infra protocol ready provider=%p\n",
+          __PRETTY_FUNCTION__, provider);
     this->fHalService = instance->fHalService;
     this->scanSource = instance->scanSource;
     return ret;
