@@ -6,3 +6,6 @@ project.xcworkspace
 FwBinary.cpp
 *.pyc
 MacKernelSDK
+
+# Local diagnostic bundles
+awdl-logs-*/

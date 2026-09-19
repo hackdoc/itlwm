@@ -9921,7 +9921,20 @@ iwx_send_bt_init_conf(struct iwx_softc *sc)
     
     bt_cmd.mode = htole32(IWX_BT_COEX_WIFI);
     bt_cmd.enabled_modules = 0;
-    
+
+    // Enable only firmware-advertised Wi-Fi/BT co-running features.  An
+    // 802.11ax radio alone does not prove that MPLUT/corun support exists.
+    if (isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_BT_COEX_PLCR))
+        bt_cmd.enabled_modules |= htole32(IWX_BT_COEX_CORUN_ENABLED);
+    if (isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_BT_COEX_RRC))
+        bt_cmd.enabled_modules |= htole32(IWX_BT_COEX_HIGH_BAND_RET);
+
+    XYLog("%s: mode=wifi modules=0x%x he=%d plcr=%d rrc=%d\n",
+          __FUNCTION__, le32toh(bt_cmd.enabled_modules),
+          sc->sc_nvm.sku_cap_11ax_enable,
+          isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_BT_COEX_PLCR),
+          isset(sc->sc_enabled_capa, IWX_UCODE_TLV_CAPA_BT_COEX_RRC));
+
     return iwx_send_cmd_pdu(sc, IWX_BT_CONFIG, 0, sizeof(bt_cmd),
                             &bt_cmd);
 }
