@@ -365,8 +365,11 @@ bool AirportItlwm::start(IOService *provider)
     memcpy(fNetIf->mExpansionData->fRegistrationInfo, &registInfo, sizeof(registInfo));
     memcpy(fNetIf->mExpansionData2->fRegistrationInfo, &registInfo, sizeof(registInfo));
     if (fNetIf->getInterfaceRole() == 1) {
-        fNetIf->deferBSDAttach(true);
-        XYLog("%s deferred Skywalk BSD attach role=%d bsd=%s\n",
+        // The parent must be visible to airportd before it can resolve an
+        // AWDL child. The previous deferred attach left the Skywalk object
+        // out of the interface cache, producing repeated role=awdl misses.
+        fNetIf->deferBSDAttach(false);
+        XYLog("%s enabled immediate Skywalk BSD attach role=%d bsd=%s\n",
               __FUNCTION__, fNetIf->getInterfaceRole(), fNetIf->getBSDName());
     }
     bool skywalkStarted = fNetIf->start(this);
