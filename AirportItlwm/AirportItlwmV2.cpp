@@ -919,12 +919,22 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
     if (!ml_at_interrupt_context())
         XYLog("%s 1 cmd: %s request: %d\n", __FUNCTION__, convertApple80211IOCTLToString(cmd), request);
 
-    // IO80211InfraProtocol exposes VIF creation on newer SDKs but not the
-    // matching delete operation. Handle it here so airportd cannot leave a
-    // stale p2p*/awdl* object attached to the controller.
-    if (cmd == APPLE80211_IOC_VIRTUAL_IF_DELETE)
+    // Ventura+ may deliver virtual-interface lifecycle requests through the
+    // Skywalk request dispatcher instead of invoking the protocol setter.
+    // Handle both directions here so airportd cannot leave a stale or
+    // unregistered p2p/awdl object attached to the controller.
+    if (cmd == APPLE80211_IOC_VIRTUAL_IF_CREATE) {
+        if (request != SIOCSA80211)
+            return kIOReturnBadArgument;
+        return createVirtualInterfaceForSkywalk(
+            (const apple80211_virt_if_create_data *)data);
+    }
+    if (cmd == APPLE80211_IOC_VIRTUAL_IF_DELETE) {
+        if (request != SIOCSA80211)
+            return kIOReturnBadArgument;
         return deleteVirtualInterfaceForSkywalk(
             (const apple80211_virt_if_delete_data *)data);
+    }
 
     // A number of AWDL commands still have implementations in the legacy
     // controller. Reuse those implementations when the Skywalk dispatcher
