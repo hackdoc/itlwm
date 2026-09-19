@@ -264,6 +264,19 @@ void AirportItlwmSkywalkInterface::setGTK(const u_int8_t *gtk, size_t key_len, u
     }
 }
 
+IOReturn AirportItlwmSkywalkInterface::
+setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data)
+{
+    if (!data || !instance)
+        return kIOReturnBadArgument;
+
+    // On Ventura and newer, airportd sends this request to the Skywalk
+    // interface rather than to the legacy IO80211VirtualInterface path.
+    // Keep the request here and let the controller perform the actual attach
+    // so both paths use the same lifetime/role handling.
+    return instance->createVirtualInterfaceForSkywalk(data);
+}
+
 bool AirportItlwmSkywalkInterface::
 init(IOService *provider)
 {

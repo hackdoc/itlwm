@@ -139,6 +139,16 @@ bool AirportItlwm::init(OSDictionary *properties)
     awdlSyncEnable = true;
     power_state = 0;
     fLastReportedLQM = 0;
+    syncFrameTemplate = NULL;
+    syncFrameTemplateLength = 0;
+    memset(awdlBSSID, 0, sizeof(awdlBSSID));
+    awdlSyncState = 0;
+    awdlElectionId = 0;
+    awdlPresenceMode = 0;
+    awdlMasterChannel = 0;
+    awdlSecondaryMasterChannel = 0;
+    fSkywalkP2PInterface = NULL;
+    fSkywalkAWDLInterface = NULL;
     memset(geo_location_cc, 0, sizeof(geo_location_cc));
     return ret;
 }
@@ -375,6 +385,19 @@ void AirportItlwm::stop(IOService *provider)
 void AirportItlwm::free()
 {
     XYLog("%s\n", __PRETTY_FUNCTION__);
+    // Skywalk virtual interfaces are not part of the legacy member set.
+    // Detach them before the controller is destroyed so the framework cannot
+    // retain an interface whose provider has already gone away.
+    if (fSkywalkAWDLInterface != NULL) {
+        detachVirtualInterface(fSkywalkAWDLInterface, false);
+        fSkywalkAWDLInterface->release();
+        fSkywalkAWDLInterface = NULL;
+    }
+    if (fSkywalkP2PInterface != NULL) {
+        detachVirtualInterface(fSkywalkP2PInterface, false);
+        fSkywalkP2PInterface->release();
+        fSkywalkP2PInterface = NULL;
+    }
     if (fHalService != NULL) {
         fHalService->release();
         fHalService = NULL;
@@ -895,14 +918,161 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
 {
     if (!ml_at_interrupt_context())
         XYLog("%s 1 cmd: %s request: %d\n", __FUNCTION__, convertApple80211IOCTLToString(cmd), request);
-    return kIOReturnUnsupported;
+
+    // IO80211InfraProtocol exposes VIF creation on newer SDKs but not the
+    // matching delete operation. Handle it here so airportd cannot leave a
+    // stale p2p*/awdl* object attached to the controller.
+    if (cmd == APPLE80211_IOC_VIRTUAL_IF_DELETE)
+        return deleteVirtualInterfaceForSkywalk(
+            (const apple80211_virt_if_delete_data *)data);
+
+    // A number of AWDL commands still have implementations in the legacy
+    // controller. Reuse those implementations when the Skywalk dispatcher
+    // reaches this hook; this is deliberately limited to commands with
+    // well-defined legacy handlers and does not advertise a data path yet.
+    if (data) {
+        switch (cmd) {
+            case APPLE80211_IOC_AWDL_PEER_TRAFFIC_REGISTRATION:
+                return request == SIOCGA80211
+                    ? getAWDL_PEER_TRAFFIC_REGISTRATION(interface,
+                        (apple80211_awdl_peer_traffic_registration *)data)
+                    : setAWDL_PEER_TRAFFIC_REGISTRATION(interface,
+                        (apple80211_awdl_peer_traffic_registration *)data);
+            case APPLE80211_IOC_AWDL_ELECTION_METRIC:
+                return request == SIOCGA80211
+                    ? getAWDL_ELECTION_METRIC(interface,
+                        (apple80211_awdl_election_metric *)data)
+                    : setAWDL_ELECTION_METRIC(interface,
+                        (apple80211_awdl_election_metric *)data);
+            case APPLE80211_IOC_AWDL_SYNC_ENABLED:
+                return request == SIOCGA80211
+                    ? getSYNC_ENABLED(interface,
+                        (apple80211_awdl_sync_enabled *)data)
+                    : setSYNC_ENABLED(interface,
+                        (apple80211_awdl_sync_enabled *)data);
+            case APPLE80211_IOC_AWDL_BSSID:
+                return request == SIOCGA80211
+                    ? getAWDL_BSSID(interface,
+                        (apple80211_awdl_bssid *)data)
+                    : setAWDL_BSSID(interface,
+                        (apple80211_awdl_bssid *)data);
+            case APPLE80211_IOC_AWDL_MIN_RATE:
+                return request == SIOCGA80211
+                    ? getAWDL_MIN_RATE(interface,
+                        (apple80211_awdl_min_rate *)data)
+                    : setAWDL_MIN_RATE(interface,
+                        (apple80211_awdl_min_rate *)data);
+            case APPLE80211_IOC_AWDL_SYNC_STATE:
+                return request == SIOCGA80211
+                    ? getAWDL_SYNC_STATE(interface,
+                        (apple80211_awdl_sync_state *)data)
+                    : setAWDL_SYNC_STATE(interface,
+                        (apple80211_awdl_sync_state *)data);
+            case APPLE80211_IOC_AWDL_SYNC_FRAME_TEMPLATE:
+                return request == SIOCGA80211 ? getSYNC_FRAME_TEMPLATE(interface, (apple80211_awdl_sync_frame_template *)data) : setSYNC_FRAME_TEMPLATE(interface, (apple80211_awdl_sync_frame_template *)data);
+            case APPLE80211_IOC_AWDL_ELECTION_ID:
+                return request == SIOCGA80211 ? getAWDL_ELECTION_ID(interface, (apple80211_awdl_election_id *)data) : setAWDL_ELECTION_ID(interface, (apple80211_awdl_election_id *)data);
+            case APPLE80211_IOC_AWDL_MASTER_CHANNEL:
+                return request == SIOCGA80211 ? getAWDL_MASTER_CHANNEL(interface, (apple80211_awdl_master_channel *)data) : setAWDL_MASTER_CHANNEL(interface, (apple80211_awdl_master_channel *)data);
+            case APPLE80211_IOC_AWDL_SECONDARY_MASTER_CHANNEL:
+                return request == SIOCGA80211 ? getAWDL_SECONDARY_MASTER_CHANNEL(interface, (apple80211_awdl_secondary_master_channel *)data) : setAWDL_SECONDARY_MASTER_CHANNEL(interface, (apple80211_awdl_secondary_master_channel *)data);
+            case APPLE80211_IOC_AWDL_SYNCHRONIZATION_CHANNEL_SEQUENCE:
+                return request == SIOCGA80211 ? getAWDL_SYNCHRONIZATION_CHANNEL_SEQUENCE(interface, (apple80211_awdl_sync_channel_sequence *)data) : setAWDL_SYNCHRONIZATION_CHANNEL_SEQUENCE(interface, (apple80211_awdl_sync_channel_sequence *)data);
+            case APPLE80211_IOC_AWDL_PRESENCE_MODE:
+                return request == SIOCGA80211 ? getAWDL_PRESENCE_MODE(interface, (apple80211_awdl_presence_mode *)data) : setAWDL_PRESENCE_MODE(interface, (apple80211_awdl_presence_mode *)data);
+            case APPLE80211_IOC_AWDL_SYNC_PARAMS:
+                return request == SIOCGA80211 ? getAWDL_SYNC_PARAMS(interface, (apple80211_awdl_sync_params *)data) : setAWDL_SYNC_PARAMS(interface, (apple80211_awdl_sync_params *)data);
+            case APPLE80211_IOC_AWDL_CAPABILITIES:
+                return getAWDL_CAPABILITIES(interface,
+                    (apple80211_awdl_cap *)data);
+            case APPLE80211_IOC_AWDL_AF_TX_MODE:
+                return request == SIOCGA80211
+                    ? getAWDL_AF_TX_MODE(interface,
+                        (apple80211_awdl_af_tx_mode *)data)
+                    : setAWDL_AF_TX_MODE(interface,
+                        (apple80211_awdl_af_tx_mode *)data);
+            default:
+                break;
+        }
+    }
+
+    // Let IO80211ControllerV2 handle the remaining standard requests.
+    return super::apple80211SkywalkRequest(request, cmd, interface, data);
 }
 
 SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211SkywalkInterface *interface,void *data,void *)
 {
     if (!ml_at_interrupt_context())
         XYLog("%s 2 cmd: %s request: %d\n", __FUNCTION__, convertApple80211IOCTLToString(cmd), request);
-    return kIOReturnUnsupported;
+    return apple80211SkywalkRequest(request, cmd, interface, data);
+}
+
+IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if_create_data *data)
+{
+    if (!data || data->version != APPLE80211_VERSION)
+        return kIOReturnBadArgument;
+
+    const UInt role = data->role;
+    if (role < APPLE80211_VIF_P2P_DEVICE || role >= APPLE80211_VIF_MAX)
+        return kIOReturnBadArgument;
+
+    ether_addr address;
+    memcpy(address.octet, data->mac, sizeof(address.octet));
+
+    IO80211VirtualInterface **slot = NULL;
+    if (role == APPLE80211_VIF_AWDL)
+        slot = &fSkywalkAWDLInterface;
+    else if (role == APPLE80211_VIF_P2P_DEVICE ||
+             role == APPLE80211_VIF_P2P_CLIENT ||
+             role == APPLE80211_VIF_P2P_GO)
+        slot = &fSkywalkP2PInterface;
+
+    if (!slot)
+        return kIOReturnUnsupported;
+    if (*slot) {
+        XYLog("%s role=%u already attached as %s\n", __FUNCTION__, role,
+              (*slot)->getBSDName());
+        return kIOReturnSuccess;
+    }
+
+    IO80211VirtualInterface *vif = createVirtualInterface(&address, role);
+    if (!vif)
+        return kIOReturnNoMemory;
+
+    if (!attachVirtualInterface(&vif, &address, role, true)) {
+        vif->release();
+        return kIOReturnError;
+    }
+    *slot = vif;
+    XYLog("%s attached role=%u requested name=%s actual name=%s\n",
+          __FUNCTION__, role, data->bsd_name, vif->getBSDName());
+    return kIOReturnSuccess;
+}
+
+IOReturn AirportItlwm::deleteVirtualInterfaceForSkywalk(
+    const apple80211_virt_if_delete_data *data)
+{
+    if (!data || data->version != APPLE80211_VERSION)
+        return kIOReturnBadArgument;
+
+    IO80211VirtualInterface **slots[] = {
+        &fSkywalkAWDLInterface, &fSkywalkP2PInterface
+    };
+    for (unsigned int i = 0; i < sizeof(slots) / sizeof(slots[0]); ++i) {
+        IO80211VirtualInterface **slot = slots[i];
+        if (*slot && !strncmp((*slot)->getBSDName(),
+                              (const char *)data->bsd_name, IFNAMSIZ)) {
+            IO80211VirtualInterface *vif = *slot;
+            *slot = NULL;
+            if (!detachVirtualInterface(vif, false)) {
+                *slot = vif;
+                return kIOReturnError;
+            }
+            vif->release();
+            return kIOReturnSuccess;
+        }
+    }
+    return kIOReturnNotFound;
 }
 
 IOReturn AirportItlwm::enableAdapter(IONetworkInterface *netif)

@@ -2354,7 +2354,12 @@ bool allocDmaMemory2(struct iwx_dma_info *dma, size_t size, int alignment)
     }
 
     if (cmd->setMemoryDescriptor(bmd) != kIOReturnSuccess
-        || cmd->gen64IOVMSegments(&ofs, &seg, &numSegs) != kIOReturnSuccess) {
+        || cmd->gen64IOVMSegments(&ofs, &seg, &numSegs) != kIOReturnSuccess
+        || numSegs != 1
+        || seg.fIOVMAddr == 0
+        || seg.fLength < size
+        || seg.fIOVMAddr > UINT64_MAX - size) {
+        XYLog("%s invalid AppleVTD DMA mapping (segments=%u, addr=0x%llx, length=%llu, requested=%lu).\n", __FUNCTION__, numSegs, seg.fIOVMAddr, seg.fLength, (unsigned long)size);
         cmd->release();
         cmd = NULL;
         bmd->complete();

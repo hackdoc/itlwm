@@ -1005,7 +1005,11 @@ disableVirtualInterface(IO80211VirtualInterface *interface)
 IO80211VirtualInterface *AirportItlwm::
 createVirtualInterface(ether_addr *ether, UInt role)
 {
-    if (role - 1 > 3)
+    // Ventura moved the P2P/AWDL role values from 1..4 to 3..6.
+    // Keep using the generic virtual-interface object for both ABI layouts;
+    // the old arithmetic check silently routed all new roles to the base
+    // implementation (and made AWDL creation fail on newer systems).
+    if (role < APPLE80211_VIF_P2P_DEVICE || role > APPLE80211_VIF_AWDL)
         return super::createVirtualInterface(ether, role);
     IO80211VirtualInterface *inf = new IO80211VirtualInterface;
     if (inf) {

@@ -305,8 +305,12 @@ bool allocDmaMemory2(struct iwm_dma_info *dma, size_t size, int alignment)
         return false;
     }
     
-    bmd->prepare();
-    IODMACommand *cmd = IODMACommand::withSpecification(kIODMACommandOutputHost64, 64, 0, IODMACommand::kMapped, 0, alignment);
+    if (bmd->prepare() != kIOReturnSuccess) {
+        XYLog("%s prepare DMA memory failed.\n", __FUNCTION__);
+        bmd->release();
+        return false;
+    }
+    IODMACommand *cmd = IODMACommand::withSpecification(kIODMACommandOutputHost64, 36, 0, IODMACommand::kMapped, 0, alignment);
     
     if (cmd == NULL) {
         XYLog("%s alloc IODMACommand memory failed.\n", __FUNCTION__);
@@ -315,9 +319,13 @@ bool allocDmaMemory2(struct iwm_dma_info *dma, size_t size, int alignment)
         return false;
     }
     
-    cmd->setMemoryDescriptor(bmd);
-
-    if (cmd->gen64IOVMSegments(&ofs, &seg, &numSegs) != kIOReturnSuccess) {
+    if (cmd->setMemoryDescriptor(bmd) != kIOReturnSuccess
+        || cmd->gen64IOVMSegments(&ofs, &seg, &numSegs) != kIOReturnSuccess
+        || numSegs != 1
+        || seg.fIOVMAddr == 0
+        || seg.fLength < size
+        || seg.fIOVMAddr > UINT64_MAX - size) {
+        XYLog("%s invalid AppleVTD DMA mapping (segments=%u, addr=0x%llx, length=%llu, requested=%lu).\n", __FUNCTION__, numSegs, seg.fIOVMAddr, seg.fLength, (unsigned long)size);
         cmd->release();
         cmd = NULL;
         bmd->complete();

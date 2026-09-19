@@ -129,6 +129,9 @@ public:
     virtual SInt32 apple80211_ioctl(IO80211SkywalkInterface *,unsigned long,void *, bool, bool) override;
     virtual SInt32 apple80211SkywalkRequest(UInt,int,IO80211SkywalkInterface *,void *) override;
     virtual SInt32 apple80211SkywalkRequest(UInt,int,IO80211SkywalkInterface *,void *,void *) override;
+    // Handle virtual interfaces through the Skywalk (macOS 13+) IO80211 path.
+    IOReturn createVirtualInterfaceForSkywalk(const apple80211_virt_if_create_data *data);
+    IOReturn deleteVirtualInterfaceForSkywalk(const apple80211_virt_if_delete_data *data);
 
     bool createMediumTables(const IONetworkMedium **primary);
     void releaseAll();
@@ -208,6 +211,10 @@ public:
     IOWorkLoop *fWatchdogWorkLoop;
     ItlHalService *fHalService;
     unsigned long long fLastReportedLQM;
+    // Skywalk does not use the legacy P2P members, but keep them explicitly null
+    // so a link-state notification cannot dereference stale memory.
+    IO80211VirtualInterface *fSkywalkP2PInterface;
+    IO80211VirtualInterface *fSkywalkAWDLInterface;
     
     //IO80211
     uint8_t power_state;

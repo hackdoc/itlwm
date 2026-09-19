@@ -165,7 +165,7 @@ public:
     virtual IOReturn setIE(apple80211_ie_data *) override { return kIOReturnUnsupported; }
     virtual IOReturn setWOW_TEST(apple80211_wow_test_data *) override { return kIOReturnUnsupported; }
     virtual IOReturn setSCANCACHE_CLEAR(void *) override;
-    virtual IOReturn setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *) override { return kIOReturnUnsupported; }
+    virtual IOReturn setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data) override;
     virtual IOReturn setBT_COEX_FLAGS(apple80211_state_data *) override { return kIOReturnUnsupported; }
     virtual IOReturn setROAM(apple80211_sta_roam_data *) override { return kIOReturnUnsupported; }
     virtual IOReturn setHT_CAPABILITY(apple80211_ht_capability *) override { return kIOReturnUnsupported; }
