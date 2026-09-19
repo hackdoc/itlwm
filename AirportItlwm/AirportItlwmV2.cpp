@@ -1013,8 +1013,15 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
         return kIOReturnBadArgument;
 
     const UInt role = data->role;
-    if (role < APPLE80211_VIF_P2P_DEVICE || role >= APPLE80211_VIF_MAX)
+    if (role < APPLE80211_VIF_P2P_DEVICE || role >= APPLE80211_VIF_MAX) {
+        XYLog("%s invalid role=%u requested_name=%.*s\n", __FUNCTION__, role,
+              IFNAMSIZ, data->bsd_name);
         return kIOReturnBadArgument;
+    }
+
+    XYLog("%s role=%u requested_name=%.*s mac=%02x:%02x:%02x:%02x:%02x:%02x\n",
+          __FUNCTION__, role, IFNAMSIZ, data->bsd_name, data->mac[0],
+          data->mac[1], data->mac[2], data->mac[3], data->mac[4], data->mac[5]);
 
     ether_addr address;
     memcpy(address.octet, data->mac, sizeof(address.octet));
@@ -1040,12 +1047,15 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
         return kIOReturnNoMemory;
 
     if (!attachVirtualInterface(&vif, &address, role, true)) {
+        XYLog("%s attachVirtualInterface failed role=%u requested_name=%.*s\n",
+              __FUNCTION__, role, IFNAMSIZ, data->bsd_name);
         vif->release();
         return kIOReturnError;
     }
     *slot = vif;
-    XYLog("%s attached role=%u requested name=%s actual name=%s\n",
-          __FUNCTION__, role, data->bsd_name, vif->getBSDName());
+    XYLog("%s attached role=%u requested_name=%.*s actual_name=%s enabled=%d link=%d\n",
+          __FUNCTION__, role, IFNAMSIZ, data->bsd_name, vif->getBSDName(),
+          vif->enabledBySystem(), vif->linkState());
     return kIOReturnSuccess;
 }
 
