@@ -960,9 +960,22 @@ enableFeature(IO80211FeatureCode code, void *data)
 int AirportItlwm::
 outputActionFrame(OSObject *object, mbuf_t m)
 {
-    XYLog("%s len=%zu\n", __FUNCTION__, mbuf_len(m));
-    mbuf_freem(m);
-    return 0;
+    // This callback is reached by the legacy BPF action-frame path.  It is
+    // deliberately a drop until the Intel management-TX ownership contract
+    // is wired up; handing this mbuf to the normal Ethernet queue would
+    // produce a malformed frame and/or double-free it.
+    if (m == NULL || mbuf_type(m) == MBUF_TYPE_FREE) {
+        XYLog("%s invalid mbuf\n", __FUNCTION__);
+        return kIOReturnOutputDropped;
+    }
+    if (!(mbuf_flags(m) & MBUF_PKTHDR)) {
+        XYLog("%s mbuf has no packet header\n", __FUNCTION__);
+        freePacket(m);
+        return kIOReturnOutputDropped;
+    }
+    XYLog("%s len=%zu (management TX not connected)\n", __FUNCTION__, mbuf_len(m));
+    freePacket(m);
+    return kIOReturnOutputDropped;
 }
 
 int AirportItlwm::
@@ -1038,7 +1051,6 @@ bpfOutputPacket(OSObject *object, UInt dltType, mbuf_t m)
 void AirportItlwm::
 requestPacketTx(void *object, UInt )
 {
-    UInt32 ret;
     struct TxPacketRequest request;
     if (object == NULL)
         return;
@@ -1046,12 +1058,13 @@ requestPacketTx(void *object, UInt )
     if (interface) {
         memset(&request, 0, sizeof(request));
         if (interface->getInterfaceRole() == APPLE80211_VIF_AWDL) {
-//            interface->dequeueTxPackets(&request);
-//
-//            ret = outputPacket(NULL, interface);
-//            if (ret == kIOReturnSuccess) {
-//                interface->reportTransmitStatus(NULL, ret, NULL);
-//            }
+            // Do not dequeue yet.  TxPacketRequest::bufs are owned by the
+            // virtual interface after dequeueTxPackets(); the Intel TX
+            // completion path must release/report each mbuf exactly once.
+            // The existing Ethernet outputPacket() path cannot provide that
+            // contract and must not be used for AWDL frames.
+            XYLog("%s AWDL TX pending management-queue integration\n",
+                  __FUNCTION__);
         }
     }
 }
