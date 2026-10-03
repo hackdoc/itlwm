@@ -545,6 +545,7 @@ void AirportItlwm::stop(IOService *provider)
 void AirportItlwm::free()
 {
     XYLog("%s\n", __PRETTY_FUNCTION__);
+#if 0  // AWDL V2 incomplete (IO80211VirtualInterface incomplete in V2/WCL build)
     // Skywalk virtual interfaces are not part of the legacy member set.
     // Detach them before the controller is destroyed so the framework cannot
     // retain an interface whose provider has already gone away.
@@ -558,6 +559,7 @@ void AirportItlwm::free()
         fSkywalkP2PInterface->release();
         fSkywalkP2PInterface = NULL;
     }
+#endif
     if (fHalService != NULL) {
         fHalService->release();
         fHalService = NULL;
@@ -1201,6 +1203,8 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
     if (!ml_at_interrupt_context())
         XYLog("%s 1 cmd: %s request: %d\n", __FUNCTION__, convertApple80211IOCTLToString(cmd), request);
 
+#if 0  // AWDL V2 Skywalk dispatch disabled: get/setAWDL_* are V1-only and
+       // IO80211VirtualInterface is incomplete in the V2/WCL build
     // Ventura+ may deliver virtual-interface lifecycle requests through the
     // Skywalk request dispatcher instead of invoking the protocol setter.
     // Handle both directions here so airportd cannot leave a stale or
@@ -1285,9 +1289,14 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
                 break;
         }
     }
+#endif
 
     // Let IO80211ControllerV2 handle the remaining standard requests.
+#ifdef AIRPORT_WCL
+    return kIOReturnUnsupported;
+#else
     return super::apple80211SkywalkRequest(request, cmd, interface, data);
+#endif
 }
 
 SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211SkywalkInterface *interface,void *data,void *)
@@ -1297,6 +1306,7 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
     return apple80211SkywalkRequest(request, cmd, interface, data);
 }
 
+#if 0  // AWDL V2 incomplete
 IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if_create_data *data)
 {
     if (!data || data->version != APPLE80211_VERSION)
@@ -1348,7 +1358,9 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
           vif->enabledBySystem(), vif->linkState());
     return kIOReturnSuccess;
 }
+#endif
 
+#if 0  // AWDL V2 incomplete
 IOReturn AirportItlwm::deleteVirtualInterfaceForSkywalk(
     const apple80211_virt_if_delete_data *data)
 {
@@ -1374,6 +1386,7 @@ IOReturn AirportItlwm::deleteVirtualInterfaceForSkywalk(
     }
     return kIOReturnNotFound;
 }
+#endif
 
 IOReturn AirportItlwm::enableAdapter(IONetworkInterface *netif)
 {
