@@ -1312,6 +1312,24 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
     return apple80211SkywalkRequest(request, cmd, interface, data);
 }
 
+IO80211VirtualInterface* AirportItlwm::createVirtualInterface(ether_addr *ether, unsigned int role)
+{
+    kprintf("itlwm-p0: createVirtualInterface role=%u\n", role);
+    return super::createVirtualInterface(ether, role);
+}
+
+SInt32 AirportItlwm::enableVirtualInterface(IO80211VirtualInterface *interface)
+{
+    kprintf("itlwm-p0: enableVirtualInterface\n");
+    return super::enableVirtualInterface(interface);
+}
+
+SInt32 AirportItlwm::disableVirtualInterface(IO80211VirtualInterface *interface)
+{
+    kprintf("itlwm-p0: disableVirtualInterface\n");
+    return super::disableVirtualInterface(interface);
+}
+
 #if 0  // AWDL V2 incomplete
 IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if_create_data *data)
 {
