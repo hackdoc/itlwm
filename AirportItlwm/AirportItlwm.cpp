@@ -11,13 +11,16 @@
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 * GNU General Public License for more details.
 */
+#include <os/log.h>
 #include "AirportItlwm.hpp"
 
 #include <crypto/sha1.h>
 #include <net80211/ieee80211_priv.h>
 #include <net80211/ieee80211_var.h>
+extern const char* hexdump(uint8_t *buf, size_t len);
 
 #define super IO80211Controller
+
 OSDefineMetaClassAndStructors(AirportItlwm, IO80211Controller);
 OSDefineMetaClassAndStructors(CTimeout, OSObject)
 
@@ -989,12 +992,18 @@ bpfOutput80211Radio(OSObject *object, mbuf_t m)
 SInt32 AirportItlwm::
 enableVirtualInterface(IO80211VirtualInterface *interface)
 {
-    XYLog("%s interface=%s role=%d\n", __FUNCTION__, interface->getBSDName(), interface->getInterfaceRole());
+    kprintf("itlwm-awdl: %s interface=%s role=%d\n", __FUNCTION__, interface->getBSDName(), interface->getInterfaceRole());
     SInt32 ret = super::enableVirtualInterface(interface);
     if (!ret) {
 #if __IO80211_TARGET >= __MAC_13_0
         interface->setEnabledBySystem(true);
 #endif
+        // The Skywalk/flow-queue data path is not active until the output
+        // queues are started; without this, requestPacketTx() fires but
+        // dequeueTxPackets() returns 0 (flow queues accumulate but never
+        // drain into the TX submission ring).
+        interface->startOutputQueues();
+        kprintf("itlwm-awdl: %s started output queues for %s\n", __FUNCTION__, interface->getBSDName());
         interface->setLinkState(kIO80211NetworkLinkUp, 0);
         interface->postMessage(APPLE80211_M_LINK_CHANGED);
         return kIOReturnSuccess;
@@ -1005,9 +1014,10 @@ enableVirtualInterface(IO80211VirtualInterface *interface)
 SInt32 AirportItlwm::
 disableVirtualInterface(IO80211VirtualInterface *interface)
 {
-    XYLog("%s interface=%s role=%d\n", __FUNCTION__, interface->getBSDName(), interface->getInterfaceRole());
+    kprintf("itlwm-awdl: %s interface=%s role=%d\n", __FUNCTION__, interface->getBSDName(), interface->getInterfaceRole());
     SInt32 ret = super::disableVirtualInterface(interface);
     if (!ret) {
+        interface->stopOutputQueues();
         interface->setLinkState(kIO80211NetworkLinkDown, 0);
         interface->postMessage(APPLE80211_M_LINK_CHANGED);
         return kIOReturnSuccess;
@@ -1018,16 +1028,14 @@ disableVirtualInterface(IO80211VirtualInterface *interface)
 IO80211VirtualInterface *AirportItlwm::
 createVirtualInterface(ether_addr *ether, UInt role)
 {
-    // Ventura moved the P2P/AWDL role values from 1..4 to 3..6.
-    // Keep using the generic virtual-interface object for both ABI layouts;
-    // the old arithmetic check silently routed all new roles to the base
-    // implementation (and made AWDL creation fail on newer systems).
+    // P2P/AWDL roles must be IO80211P2PInterface (the base attachVirtualInterface
+    // calls this override and then attaches + registerService()s the result).
     if (role < APPLE80211_VIF_P2P_DEVICE || role > APPLE80211_VIF_AWDL)
         return super::createVirtualInterface(ether, role);
-    IO80211VirtualInterface *inf = new IO80211VirtualInterface;
+    IO80211P2PInterface *inf = new IO80211P2PInterface;
     if (inf) {
         if (inf->init(this, ether, role, role == APPLE80211_VIF_AWDL ? "awdl" : "p2p"))
-            XYLog("%s role=%d succeed\n", __FUNCTION__, role);
+            kprintf("itlwm-awdl: %s role=%d created\n", __FUNCTION__, role);
         else {
             inf->release();
             return NULL;
@@ -1048,6 +1056,24 @@ bpfOutputPacket(OSObject *object, UInt dltType, mbuf_t m)
     return 1;
 }
 
+static void
+awdlDumpPacket(const char *func, UInt16 idx, mbuf_t packet)
+{
+    size_t seglen = mbuf_len(packet);
+    size_t totlen = 0;
+    if (mbuf_flags(packet) & MBUF_PKTHDR)
+        totlen = mbuf_pkthdr_len(packet);
+
+    kprintf("itlwm-awdl: %s AWDL pkt[%u] ptr=%p type=0x%x flags=0x%x seglen=%zu totlen=%zu\n",
+          func, idx, packet, mbuf_type(packet), mbuf_flags(packet), seglen, totlen);
+
+    const uint8_t *d = (const uint8_t *)mbuf_data(packet);
+    if (d == NULL || seglen == 0)
+        return;
+    size_t n = seglen < 64 ? seglen : 64;
+    kprintf("itlwm-awdl: %s AWDL pkt[%u] data: %s\n", func, idx, hexdump((uint8_t *)d, n));
+}
+
 void AirportItlwm::
 requestPacketTx(void *object, UInt )
 {
@@ -1055,44 +1081,68 @@ requestPacketTx(void *object, UInt )
     if (object == NULL)
         return;
     IO80211VirtualInterface *interface = OSDynamicCast(IO80211VirtualInterface, (OSObject *)object);
-    if (interface) {
-        memset(&request, 0, sizeof(request));
-        if (interface->getInterfaceRole() == APPLE80211_VIF_AWDL) {
-            // This is an ownership probe only.  It deliberately drops the
-            // dequeued packets instead of sending them: the current Intel
-            // firmware path has no AWDL completion adapter yet.  Keeping the
-            // probe here lets a development build validate the Skywalk
-            // dequeue/drop contract without feeding an AWDL mbuf into the
-            // ordinary STA Ethernet queue.
-            mbuf_t returned = interface->dequeueTxPackets(&request);
-            UInt16 count = request.pkt_cnt;
-            if (count > 8)
-                count = 8;
-            UInt16 dropped = 0;
-            for (UInt16 i = 0; i < count; ++i) {
-                mbuf_t packet = request.bufs[i];
-                if (packet == NULL)
-                    continue;
-                XYLog("%s AWDL probe packet[%u]=%p len=%zu flags=0x%x\n",
-                      __FUNCTION__, i, packet, mbuf_len(packet),
-                      mbuf_flags(packet));
-                interface->dropTxPacket(packet);
-                ++dropped;
-            }
-            // Some IO80211 releases return the first mbuf separately rather
-            // than mirroring it in bufs[].  Avoid releasing it twice.
-            if (returned != NULL) {
-                bool mirrored = false;
-                for (UInt16 i = 0; i < count; ++i)
-                    mirrored |= (request.bufs[i] == returned);
-                if (!mirrored) {
-                    interface->dropTxPacket(returned);
-                    ++dropped;
-                }
-            }
-            if (request.pkt_cnt != 0 || returned != NULL)
-                XYLog("%s AWDL ownership probe: pkt_cnt=%u dropped=%u\n",
-                      __FUNCTION__, request.pkt_cnt, dropped);
+    if (interface == NULL)
+        return;
+
+    memset(&request, 0, sizeof(request));
+    if (interface->getInterfaceRole() != APPLE80211_VIF_AWDL)
+        return;
+
+    mbuf_t returned = interface->dequeueTxPackets(&request);
+    UInt16 count = request.pkt_cnt;
+    if (count > 8)
+        count = 8;
+
+    // Diagnostic: V1 IO80211VirtualInterface / PeerManager ivars (offsets
+    // from IO80211FamilyLegacy disassembly):
+    //   iface[0x90] = IO80211FlowQueueDatabase (per-peer flow queues)
+    //   iface[0xb0] = IO80211AWDLPeerManager
+    //   iface[0xc8] = controller
+    //   pm[0x48]    = multicast peer (AWDLMulticastPeer, bcast addr)
+    //   pm[0x50]    = null-address peer
+    //   pm[0x58]    = peer list (CommandQueue)
+    uint8_t *raw = (uint8_t *)interface;
+    uintptr_t fqdb = *(uintptr_t *)(raw + 0x90);
+    uintptr_t pm   = *(uintptr_t *)(raw + 0xb0);
+    uintptr_t c8   = *(uintptr_t *)(raw + 0xc8);
+    int       e8   = *(int *)(raw + 0xe8);
+    uintptr_t pm48 = pm ? *(uintptr_t *)((uint8_t *)pm + 0x48) : 0;
+    uintptr_t pm50 = pm ? *(uintptr_t *)((uint8_t *)pm + 0x50) : 0;
+    uintptr_t pm58 = pm ? *(uintptr_t *)((uint8_t *)pm + 0x58) : 0;
+    uintptr_t pmc0 = pm ? *(uintptr_t *)((uint8_t *)pm + 0xc0) : 0;
+
+    kprintf("itlwm-awdl: %s deq: cnt=%u ret=%p reqTx=0x%x fqdb=%p pm=%p c8=%p e8=%d mcastPeer=%p nullPeer=%p peerList=%p pmc0=%p\n",
+          __FUNCTION__, request.pkt_cnt, returned, request.reqTx,
+          (void *)fqdb, (void *)pm, (void *)c8, e8,
+          (void *)pm48, (void *)pm50, (void *)pm58, (void *)pmc0);
+
+    UInt16 dropped = 0;
+    for (UInt16 i = 0; i < count; ++i) {
+        mbuf_t packet = request.bufs[i];
+        if (packet == NULL)
+            continue;
+        awdlDumpPacket(__FUNCTION__, i, packet);
+        interface->dropTxPacket(packet);
+        ++dropped;
+    }
+
+    // Some IO80211 releases return the first mbuf separately rather than
+    // mirroring it in bufs[].  Avoid releasing it twice.
+    if (returned != NULL) {
+        bool mirrored = false;
+        for (UInt16 i = 0; i < count; ++i)
+            mirrored |= (request.bufs[i] == returned);
+        if (!mirrored) {
+            kprintf("itlwm-awdl: %s AWDL dequeue returned mbuf %p not mirrored in bufs[]\n",
+                  __FUNCTION__, returned);
+            awdlDumpPacket(__FUNCTION__, 0xffff, returned);
+            interface->dropTxPacket(returned);
+            ++dropped;
         }
     }
+
+    if (request.pkt_cnt != 0 || returned != NULL)
+        kprintf("itlwm-awdl: %s AWDL ownership probe: pkt_cnt=%u dropped=%u\n",
+              __FUNCTION__, request.pkt_cnt, dropped);
 }
+

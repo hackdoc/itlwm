@@ -6,6 +6,7 @@
 //  Copyright © 2020 钟先耀. All rights reserved.
 //
 
+#include <os/log.h>
 #include "AirportItlwm.hpp"
 #include <sys/_netstat.h>
 
@@ -1454,52 +1455,49 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
 IOReturn AirportItlwm::
 setVIRTUAL_IF_CREATE(OSObject *object, struct apple80211_virt_if_create_data* data)
 {
-#if __IO80211_TARGET >= __MAC_13_0
-    // Ventura+ uses the Skywalk protocol implementation in AirportItlwmV2.
-    // Keep this legacy ABI entry disabled; forwarding here would create a
-    // second interface object because this class has no Skywalk slot.
-    XYLog("%s legacy VIF_CREATE disabled on Skywalk target\n", __FUNCTION__);
-    return kIOReturnUnsupported;
-#else
+    // V1 legacy Apple80211 path (IO80211FamilyLegacy, ioctl 94).
     struct ether_addr addr;
-    struct apple80211_channel chann;
-    XYLog("%s role=%d, bsd_name=%s, mac=%s, unk1=%d\n", __FUNCTION__, data->role, data->bsd_name,
+    kprintf("itlwm-awdl: %s role=%d, bsd_name=%s, mac=%s, unk1=%d\n", __FUNCTION__, data->role, data->bsd_name,
           ether_sprintf(data->mac), data->unk1);
-    if (data->role == APPLE80211_VIF_P2P_DEVICE) {
-        IO80211P2PInterface *inf = new IO80211P2PInterface;
-        if (inf == NULL)
-            return kIOReturnError;
-        memcpy(addr.octet, data->mac, 6);
-        inf->init(this, &addr, data->role, "p2p");
-        fP2PDISCInterface = inf;
-    } else if (data->role == APPLE80211_VIF_P2P_GO) {
-        IO80211P2PInterface *inf = new IO80211P2PInterface;
-        if (inf == NULL)
-            return kIOReturnError;
-        memcpy(addr.octet, data->mac, 6);
-        inf->init(this, &addr, data->role, "p2p");
-        fP2PGOInterface = inf;
-    } else if (data->role == APPLE80211_VIF_AWDL) {
-        if (fAWDLInterface != NULL && strncmp((const char *)data->bsd_name, "awdl", 4) == 0) {
-            XYLog("%s awdl interface already exists!\n", __FUNCTION__);
-            return kIOReturnSuccess;
-        }
-        IO80211P2PInterface *inf = new IO80211P2PInterface;
-        if (inf == NULL)
-            return kIOReturnError;
-        memcpy(addr.octet, data->mac, 6);
-        inf->init(this, &addr, data->role, "awdl");
-        chann.channel = 149;
-        chann.version = 1;
-        chann.flags = APPLE80211_C_FLAG_5GHZ | APPLE80211_C_FLAG_ACTIVE | APPLE80211_C_FLAG_80MHZ;
-        setInfraChannel(&chann);
-        fAWDLInterface = inf;
-    } else {
-        XYLog("%s unhandled virtual interface role type: %d\n", __FUNCTION__, data->role);
+
+    if (data->role == APPLE80211_VIF_AWDL &&
+        fAWDLInterface != NULL && strncmp((const char *)data->bsd_name, "awdl", 4) == 0) {
+        kprintf("itlwm-awdl: %s awdl interface already exists!\n", __FUNCTION__);
+        return kIOReturnSuccess;
+    }
+    if (data->role != APPLE80211_VIF_P2P_DEVICE &&
+        data->role != APPLE80211_VIF_P2P_GO &&
+        data->role != APPLE80211_VIF_AWDL) {
+        kprintf("itlwm-awdl: %s unhandled virtual interface role type: %d\n", __FUNCTION__, data->role);
         return kIOReturnError;
     }
+
+    memcpy(addr.octet, data->mac, 6);
+    IO80211VirtualInterface *inf = NULL;
+    // The manual "new + init" only produced the BSD name (awdl0) without
+    // publishing the IOService, so wifip2pd timed out looking for it.
+    // attachVirtualInterface() calls createVirtualInterface(), then
+    // attach() + registerService() (confirmed by disassembling
+    // IO80211Controller::attachVirtualInterface in IO80211FamilyLegacy).
+    if (!attachVirtualInterface(&inf, &addr, data->role, true) || inf == NULL) {
+        kprintf("itlwm-awdl: %s attachVirtualInterface failed role=%d\n", __FUNCTION__, data->role);
+        return kIOReturnError;
+    }
+
+    IO80211P2PInterface *p2p = OSDynamicCast(IO80211P2PInterface, inf);
+    if (p2p == NULL) {
+        kprintf("itlwm-awdl: %s created interface is not P2P role=%d\n", __FUNCTION__, data->role);
+        return kIOReturnError;
+    }
+    if (data->role == APPLE80211_VIF_P2P_DEVICE)
+        fP2PDISCInterface = p2p;
+    else if (data->role == APPLE80211_VIF_P2P_GO)
+        fP2PGOInterface = p2p;
+    else
+        fAWDLInterface = p2p;
+
+    kprintf("itlwm-awdl: %s role=%d attached, bsd=%s\n", __FUNCTION__, data->role, inf->getBSDName());
     return kIOReturnSuccess;
-#endif
 }
 
 IOReturn AirportItlwm::
