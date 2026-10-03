@@ -10,3 +10,4 @@ efi-backup*
 # Local diagnostic bundles
 awdl-logs-*/
 /awdl-re
+efi-config-backup*

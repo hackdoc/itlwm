@@ -38,6 +38,7 @@
 #include "../../AirportItlwm/WCL/WCL.hpp"
 #endif
 #include "ItlIwn.hpp"
+#include <IOKit/IOMapper.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <FwData.h>
@@ -1089,7 +1090,7 @@ iwn_read_prom_data(struct iwn_softc *sc, uint32_t addr, void *data, int count)
     return 0;
 }
 
-bool allocDmaMemory2(struct iwn_dma_info *dma, size_t size, int alignment)
+bool allocDmaMemory2(struct iwn_dma_info *dma, size_t size, int alignment, IOMapper *mapper)
 {
     IOBufferMemoryDescriptor *bmd;
     IODMACommand::Segment64 seg;
@@ -1108,7 +1109,7 @@ bool allocDmaMemory2(struct iwn_dma_info *dma, size_t size, int alignment)
         bmd->release();
         return false;
     }
-    IODMACommand *cmd = IODMACommand::withSpecification(kIODMACommandOutputHost64, 36, 0, IODMACommand::kMapped, 0, alignment);
+    IODMACommand *cmd = IODMACommand::withSpecification(kIODMACommandOutputHost64, 36, 0, IODMACommand::kMapped, 0, alignment, mapper);
     
     if (cmd == NULL) {
         XYLog("%s alloc IODMACommand memory failed.\n", __FUNCTION__);
@@ -1144,9 +1145,13 @@ int ItlIwn::
 iwn_dma_contig_alloc(bus_dma_tag_t tag, struct iwn_dma_info *dma,
                      void** kvap, bus_size_t size, bus_size_t alignment)
 {
-    if (!allocDmaMemory2(dma, size, alignment)) {
+    IOMapper *mapper = pci.pa_tag
+        ? IOMapper::copyMapperForDevice(pci.pa_tag) : NULL;
+    bool ok = allocDmaMemory2(dma, size, alignment, mapper);
+    if (mapper)
+        mapper->release();
+    if (!ok)
         return 1;
-    }
     
     if (kvap != NULL)
         *kvap = dma->vaddr;

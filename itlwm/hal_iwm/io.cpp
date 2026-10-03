@@ -121,6 +121,7 @@
 
 #include "ItlIwm.hpp"
 #include <IOKit/IODMACommand.h>
+#include <IOKit/IOMapper.h>
 
 uint32_t ItlIwm::
 iwm_read_prph_unlocked(struct iwm_softc *sc, uint32_t addr)
@@ -291,7 +292,7 @@ iwm_clear_bits_prph(struct iwm_softc *sc, uint32_t reg, uint32_t bits)
     iwm_set_bits_mask_prph(sc, reg, 0, ~bits);
 }
 
-bool allocDmaMemory2(struct iwm_dma_info *dma, size_t size, int alignment)
+bool allocDmaMemory2(struct iwm_dma_info *dma, size_t size, int alignment, IOMapper *mapper)
 {
     IOBufferMemoryDescriptor *bmd;
     IODMACommand::Segment64 seg;
@@ -310,7 +311,7 @@ bool allocDmaMemory2(struct iwm_dma_info *dma, size_t size, int alignment)
         bmd->release();
         return false;
     }
-    IODMACommand *cmd = IODMACommand::withSpecification(kIODMACommandOutputHost64, 36, 0, IODMACommand::kMapped, 0, alignment);
+    IODMACommand *cmd = IODMACommand::withSpecification(kIODMACommandOutputHost64, 36, 0, IODMACommand::kMapped, 0, alignment, mapper);
     
     if (cmd == NULL) {
         XYLog("%s alloc IODMACommand memory failed.\n", __FUNCTION__);
@@ -361,9 +362,10 @@ iwm_dma_contig_free(struct iwm_dma_info *dma)
 int ItlIwm::
 iwm_dma_contig_alloc(bus_dma_tag_t tag, struct iwm_dma_info *dma, bus_size_t size, bus_size_t alignment)
 {
-    if (!allocDmaMemory2(dma, size, alignment)) {
-        return 1;
-    }
-    
-    return 0;
+    IOMapper *mapper = pci.pa_tag
+        ? IOMapper::copyMapperForDevice(pci.pa_tag) : NULL;
+    bool ok = allocDmaMemory2(dma, size, alignment, mapper);
+    if (mapper)
+        mapper->release();
+    return ok ? 0 : 1;
 }
