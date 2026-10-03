@@ -1011,6 +1011,12 @@ getCARD_CAPABILITIES(OSObject *object,
     cd->capabilities[2] = (1 << (APPLE80211_CAP_WME - 16)) |
         (1 << (APPLE80211_CAP_SHORT_GI_40MHZ - 16)) |
         (1 << (APPLE80211_CAP_SHORT_GI_20MHZ - 16));
+    // Reverse-engineered from /usr/libexec/wifip2pd on macOS 26:
+    // before issuing APPLE80211_IOC_VIRTUAL_IF_CREATE for an AWDL interface it
+    // does Apple80211RawGet(APPLE80211_IOC_CARD_CAPABILITIES) and requires bit 0
+    // of capabilities[4] (i.e. capability bit 32) to be set.
+    cd->capabilities[4] = 0x01; // AWDL capability bit
+    // cd->capabilities[9] = 0x01; // NAN capability bit (role 9/10), intentionally disabled for now.
 #else
     cd->capabilities[2] = 0xFF; // BURST, WME, SHORT_GI_40MHZ, SHORT_GI_20MHZ, WOW, TSN, ?, ?
     cd->capabilities[3] = 0x2B;
