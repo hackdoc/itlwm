@@ -42,6 +42,8 @@ struct userPrintCtx;
 struct apple80211_lqm_summary;
 struct apple80211_infra_specific_stats;
 
+#ifndef IO80211_TXPACKETREQUEST_DEFINED
+#define IO80211_TXPACKETREQUEST_DEFINED
 struct TxPacketRequest {
     uint16_t    unk1;       // 0
     uint16_t    t;       // 2
@@ -57,6 +59,7 @@ struct TxPacketRequest {
 };
 
 static_assert(sizeof(struct TxPacketRequest) == 0x60, "TxPacketRequest size error");
+#endif
 
 class IO80211SkywalkInterface : public IOSkywalkEthernetInterface {
     OSDeclareAbstractStructors(IO80211SkywalkInterface)

@@ -6,6 +6,7 @@ project.xcworkspace
 FwBinary.cpp
 *.pyc
 MacKernelSDK
-
+efi-backup*
 # Local diagnostic bundles
 awdl-logs-*/
+/awdl-re

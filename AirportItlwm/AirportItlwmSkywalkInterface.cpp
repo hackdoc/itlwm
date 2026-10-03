@@ -270,6 +270,23 @@ void AirportItlwmSkywalkInterface::setGTK(const u_int8_t *gtk, size_t key_len, u
     }
 }
 
+IOReturn AirportItlwmSkywalkInterface::
+setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data)
+{
+    if (!data || !instance) {
+        XYLog("%s rejected data=%p instance=%p\n", __FUNCTION__, data, instance);
+        return kIOReturnBadArgument;
+    }
+
+    XYLog("%s version=0x%x role=%u requested_name=%.*s\n", __FUNCTION__,
+          data->version, data->role, IFNAMSIZ, data->bsd_name);
+
+    // Ventura and newer deliver AWDL/P2P virtual-interface creation through
+    // the Skywalk protocol setter instead of the legacy ioctl dispatcher.
+    // Forward to the controller so both paths share role/attach handling.
+    return instance->createVirtualInterfaceForSkywalk(data);
+}
+
 bool AirportItlwmSkywalkInterface::
 init(IOService *provider)
 {

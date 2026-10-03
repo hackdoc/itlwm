@@ -13,6 +13,7 @@
 #include <net80211/ieee80211_var.h>
 
 #include "AirportItlwmSkywalkInterface.hpp"
+#include "IO80211VirtualInterface.h"
 #include "IOPCIEDeviceWrapper.hpp"
 
 #define super IO80211Controller
@@ -545,7 +546,6 @@ void AirportItlwm::stop(IOService *provider)
 void AirportItlwm::free()
 {
     XYLog("%s\n", __PRETTY_FUNCTION__);
-#if 0  // AWDL V2 incomplete (IO80211VirtualInterface incomplete in V2/WCL build)
     // Skywalk virtual interfaces are not part of the legacy member set.
     // Detach them before the controller is destroyed so the framework cannot
     // retain an interface whose provider has already gone away.
@@ -559,7 +559,6 @@ void AirportItlwm::free()
         fSkywalkP2PInterface->release();
         fSkywalkP2PInterface = NULL;
     }
-#endif
     if (fHalService != NULL) {
         fHalService->release();
         fHalService = NULL;
@@ -1315,6 +1314,22 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
 IO80211VirtualInterface* AirportItlwm::createVirtualInterface(ether_addr *ether, unsigned int role)
 {
     kprintf("itlwm-p0: createVirtualInterface role=%u\n", role);
+    // AWDL (6) and P2P (3..5) virtual interfaces. The native family's base
+    // createVirtualInterface only handles SoftAP (role 7); these roles must
+    // be created here so attachVirtualInterface() can publish awdl0/p2p.
+    if (role == APPLE80211_VIF_AWDL ||
+        (role >= APPLE80211_VIF_P2P_DEVICE && role <= APPLE80211_VIF_P2P_GO)) {
+        IO80211VirtualInterface *inf = new IO80211VirtualInterface;
+        if (inf == NULL)
+            return NULL;
+        const char *name = (role == APPLE80211_VIF_AWDL) ? "awdl" : "p2p";
+        if (inf->init(this, ether, role, name)) {
+            kprintf("itlwm-p0: createVirtualInterface role=%u created name=%s\n", role, name);
+            return inf;
+        }
+        inf->release();
+        return NULL;
+    }
     return super::createVirtualInterface(ether, role);
 }
 
@@ -1330,7 +1345,6 @@ SInt32 AirportItlwm::disableVirtualInterface(IO80211VirtualInterface *interface)
     return super::disableVirtualInterface(interface);
 }
 
-#if 0  // AWDL V2 incomplete
 IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if_create_data *data)
 {
     if (!data || data->version != APPLE80211_VERSION)
@@ -1382,9 +1396,7 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
           vif->enabledBySystem(), vif->linkState());
     return kIOReturnSuccess;
 }
-#endif
 
-#if 0  // AWDL V2 incomplete
 IOReturn AirportItlwm::deleteVirtualInterfaceForSkywalk(
     const apple80211_virt_if_delete_data *data)
 {
@@ -1410,7 +1422,6 @@ IOReturn AirportItlwm::deleteVirtualInterfaceForSkywalk(
     }
     return kIOReturnNotFound;
 }
-#endif
 
 IOReturn AirportItlwm::enableAdapter(IONetworkInterface *netif)
 {
