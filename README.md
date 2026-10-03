@@ -10,6 +10,43 @@ We highly recommend exploring our documentation before using this Kernel Extensi
 - [Compatibility](https://openintelwireless.github.io/itlwm/Compat)
 - [FAQ](https://openintelwireless.github.io/itlwm/FAQ)
 
+## AirportItlwm on macOS 26
+
+The `AirportItlwm-Tahoe` target integrates the native IO80211 WCL interface.
+It uses the existing PCI device table and the iwn, iwm, and iwx backends; it does
+not add support for devices or radio features absent from those backends.
+The implementation includes scan results, association and link events, private
+MAC synchronization, firmware lifecycle notifications, and beacon-based link
+quality updates. Native ABI declarations are isolated in `include/Airport/macOS26`;
+the new behavior is compiled only with `AIRPORT_WCL`.
+
+Runtime validation so far covers Intel Wireless-AC 7260. Other devices require
+hardware validation; compilation is not evidence of working Wi-Fi on every card.
+HE/MLO extended BSS reporting, WPA3-only authentication, AWDL, and wake-on-wireless
+are not advertised as implemented by this integration.
+
+WPA2/WPA3-Personal transition networks with optional PMF are presented to WCL
+using their advertised WPA2-PSK option. The original received RSN IE is retained
+by net80211 for handshake validation. This does not implement SAE or enable
+connections to WPA3-only networks or networks requiring PMF.
+
+Build with Xcode and MacKernelSDK at commit
+`3f750085caa17ec3a7880f11c11bf4f48cd6a164` checked out in `MacKernelSDK`:
+
+```sh
+xcodebuild -project itlwm.xcodeproj -scheme AirportItlwm-Tahoe \
+  -configuration Release ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build
+```
+
+The `AirportItlwm (all)` scheme also builds this target. CI compiles itlwm and all
+nine AirportItlwm targets in Debug and Release, with separate artifacts for each
+system. Every push to `main` publishes an alpha prerelease after both configurations
+pass. The rolling `v<version>-alpha` tag points to the published commit; obsolete
+assets and older prereleases are removed after upload, while stable releases are
+retained. Packages use the upstream naming format, for example
+`AirportItlwm-Tahoe-v2.4.0-RELEASE-alpha-<commit>.zip`.
+Pull requests only build and upload CI artifacts.
+
 ## Download
 
 [![Download from https://github.com/OpenIntelWireless/itlwm/releases](https://img.shields.io/github/v/release/OpenIntelWireless/itlwm?label=Download)](https://github.com/OpenIntelWireless/itlwm/releases)

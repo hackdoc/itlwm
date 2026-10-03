@@ -14,6 +14,10 @@
 #include <net80211/ieee80211_ioctl.h>
 #include <net80211/ieee80211_priv.h>
 
+#ifdef AIRPORT_WCL
+extern IOCommandGate *_fCommandGate;
+#endif
+
 #define super IO80211InfraProtocol
 OSDefineMetaClassAndStructors(AirportItlwmSkywalkInterface, IO80211InfraProtocol);
 
@@ -121,6 +125,7 @@ void AirportItlwmSkywalkInterface::associateSSID(uint8_t *ssid, uint32_t ssid_le
         ic->ic_flags &= ~IEEE80211_F_DESBSSID;
     }
 
+#ifndef AIRPORT_WCL
     // AUTHTYPE_WPA3_SAE AUTHTYPE_WPA3_FT_SAE
     // we don't really support WPA3, but we have announced we support WPA3 in card capability function. so we fake it as WPA2 to support some WPA2/WPA3 mix wifi connection.
     if (authtype_upper == APPLE80211_AUTHTYPE_WPA3_SAE || authtype_upper == APPLE80211_AUTHTYPE_WPA3_FT_SAE) {
@@ -133,6 +138,7 @@ void AirportItlwmSkywalkInterface::associateSSID(uint8_t *ssid, uint32_t ssid_le
         authtype_upper |= APPLE80211_AUTHTYPE_WPA2;// hack
     }
     
+#endif
     if (authtype_upper & (APPLE80211_AUTHTYPE_WPA | APPLE80211_AUTHTYPE_WPA_PSK | APPLE80211_AUTHTYPE_WPA2 | APPLE80211_AUTHTYPE_WPA2_PSK | APPLE80211_AUTHTYPE_SHA256_PSK | APPLE80211_AUTHTYPE_SHA256_8021X)) {
         XYLog("%s %d\n", __FUNCTION__, __LINE__);
         wpa.i_protos = IEEE80211_WPA_PROTO_WPA1 | IEEE80211_WPA_PROTO_WPA2;
@@ -264,24 +270,6 @@ void AirportItlwmSkywalkInterface::setGTK(const u_int8_t *gtk, size_t key_len, u
     }
 }
 
-IOReturn AirportItlwmSkywalkInterface::
-setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data)
-{
-    if (!data || !instance) {
-        XYLog("%s rejected data=%p instance=%p\n", __FUNCTION__, data, instance);
-        return kIOReturnBadArgument;
-    }
-
-    XYLog("%s version=0x%x role=%u requested_name=%.*s\n", __FUNCTION__,
-          data->version, data->role, IFNAMSIZ, data->bsd_name);
-
-    // On Ventura and newer, airportd sends this request to the Skywalk
-    // interface rather than to the legacy IO80211VirtualInterface path.
-    // Keep the request here and let the controller perform the actual attach
-    // so both paths use the same lifetime/role handling.
-    return instance->createVirtualInterfaceForSkywalk(data);
-}
-
 bool AirportItlwmSkywalkInterface::
 init(IOService *provider)
 {
@@ -293,10 +281,18 @@ init(IOService *provider)
     instance = OSDynamicCast(AirportItlwm, provider);
     if (!instance)
         return false;
-    XYLog("%s Skywalk infra protocol ready provider=%p\n",
-          __PRETTY_FUNCTION__, provider);
     this->fHalService = instance->fHalService;
     this->scanSource = instance->scanSource;
+#ifdef AIRPORT_WCL
+    IOEthernetAddress address;
+    if (instance->getHardwareAddress(&address) != kIOReturnSuccess)
+        return false;
+    memcpy(wclPermanentMAC, &address, sizeof(wclPermanentMAC));
+    if (!IO80211SkywalkInterface::init(provider, reinterpret_cast<ether_addr *>(&address)))
+        return false;
+    if (!initWCL())
+        return false;
+#endif
     return ret;
 }
 
@@ -312,11 +308,16 @@ IOReturn AirportItlwmSkywalkInterface::
 getSSID(struct apple80211_ssid_data *sd)
 {
     struct ieee80211com * ic = fHalService->get80211Controller();
-    if (ic->ic_state == IEEE80211_S_RUN && ic->ic_bss != NULL) {
+    if (ic->ic_state == IEEE80211_S_RUN) {
         memset(sd, 0, sizeof(*sd));
         sd->version = APPLE80211_VERSION;
+#ifdef AIRPORT_WCL
         sd->ssid_len = MIN(ic->ic_bss->ni_esslen, sizeof(sd->ssid_bytes));
         memcpy(sd->ssid_bytes, ic->ic_bss->ni_essid, sd->ssid_len);
+#else
+        memcpy(sd->ssid_bytes, ic->ic_des_essid, strlen((const char*)ic->ic_des_essid));
+        sd->ssid_len = (uint32_t)strlen((const char*)ic->ic_des_essid);
+#endif
         return kIOReturnSuccess;
     }
     return 6;
@@ -342,6 +343,10 @@ setAUTH_TYPE(struct apple80211_authtype_data *ad)
 IOReturn AirportItlwmSkywalkInterface::
 setCIPHER_KEY(struct apple80211_key *key)
 {
+#ifdef AIRPORT_WCL
+    return _fCommandGate->runAction(wclCommand, this, reinterpret_cast<void *>(8), key);
+#else
+
     XYLog("%s\n", __FUNCTION__);
     const char* keydump = hexdump(key->key, key->key_len);
     const char* rscdump = hexdump(key->key_rsc, key->key_rsc_len);
@@ -401,6 +406,7 @@ setCIPHER_KEY(struct apple80211_key *key)
     }
     //fInterface->postMessage(APPLE80211_M_CIPHER_KEY_CHANGED);
     return kIOReturnSuccess;
+#endif
 }
 
 IOReturn AirportItlwmSkywalkInterface::
@@ -544,7 +550,11 @@ getRATE_SET(struct apple80211_rate_set_data *ad)
         ad->num_rates = ic->ic_bss->ni_rates.rs_nrates;
         size_t size = min(ic->ic_bss->ni_rates.rs_nrates, ARRAY_SIZE(ad->rates));
         for (int i=0; i < size; i++) {
+#ifdef AIRPORT_WCL
+            struct apple80211_rate &apple_rate = ad->rates[i];
+#else
             struct apple80211_rate apple_rate = ad->rates[i];
+#endif
             apple_rate.version = APPLE80211_VERSION;
             apple_rate.rate = ic->ic_bss->ni_rates.rs_rates[i];
             apple_rate.flags = 0;
@@ -662,7 +672,9 @@ getRSSI(struct apple80211_rssi_data *rd)
 IOReturn AirportItlwmSkywalkInterface::
 getRSN_IE(struct apple80211_rsn_ie_data *data)
 {
-#ifdef USE_APPLE_SUPPLICANT
+#ifdef AIRPORT_WCL
+    return _fCommandGate->runAction(wclCommand, this, reinterpret_cast<void *>(10), data);
+#elif defined(USE_APPLE_SUPPLICANT)
     struct ieee80211com *ic = fHalService->get80211Controller();
     if (ic->ic_bss == NULL || ic->ic_bss->ni_rsnie == NULL) {
         return kIOReturnError;
@@ -685,7 +697,9 @@ getRSN_IE(struct apple80211_rsn_ie_data *data)
 IOReturn AirportItlwmSkywalkInterface::
 setRSN_IE(struct apple80211_rsn_ie_data *data)
 {
-#ifdef USE_APPLE_SUPPLICANT
+#ifdef AIRPORT_WCL
+    return _fCommandGate->runAction(wclCommand, this, reinterpret_cast<void *>(9), data);
+#elif defined(USE_APPLE_SUPPLICANT)
     struct ieee80211com *ic = fHalService->get80211Controller();
     if (!data)
         return kIOReturnError;
@@ -970,10 +984,9 @@ static int convertNodeToScanResult(ItlHalService *fHalService, struct ieee80211_
         result->asr_ie_len = 0;
     }
     result->asr_beacon_int = fNextNodeToSend->ni_intval;
-    result->asr_nrates = MIN(fNextNodeToSend->ni_rates.rs_nrates,
-                             sizeof(result->asr_rates) / sizeof(result->asr_rates[0]));
     for (int i = 0; i < result->asr_nrates; i++ )
         result->asr_rates[i] = fNextNodeToSend->ni_rates.rs_rates[i];
+    result->asr_nrates = fNextNodeToSend->ni_rates.rs_nrates;
     result->asr_age = (uint32_t)(airport_up_time() - fNextNodeToSend->ni_age_ts);
     result->asr_cap = fNextNodeToSend->ni_capinfo;
     result->asr_channel.version = APPLE80211_VERSION;
@@ -1029,3 +1042,27 @@ getSCAN_RESULT(struct apple80211_scan_result *sr)
 
     return kIOReturnSuccess;
 }
+
+#ifdef AIRPORT_WCL
+IOReturn AirportItlwmSkywalkInterface::getHW_ADDR(apple80211_hw_mac_address *data)
+{
+    if (!data) return kIOReturnBadArgument;
+    AirportWCL::HardwareAddress value;
+    if (!AirportWCL::copyHardwareAddress(wclPermanentMAC, value)) return kIOReturnNotReady;
+    memcpy(data, &value, sizeof(value));
+    return kIOReturnSuccess;
+}
+
+IOReturn AirportItlwmSkywalkInterface::setMacAddress(mloAddrArray &addresses)
+{
+    return instance->setHardwareAddress(&addresses, IEEE80211_ADDR_LEN);
+}
+
+#endif
+
+#ifndef AIRPORT_WCL
+IOReturn AirportItlwmSkywalkInterface::getHW_ADDR(apple80211_hw_mac_address *)
+{
+    return kIOReturnUnsupported;
+}
+#endif

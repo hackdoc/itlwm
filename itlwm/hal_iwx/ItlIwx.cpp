@@ -106,6 +106,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifdef AIRPORT_WCL
+#include "../../AirportItlwm/WCL/WCL.hpp"
+#endif
 #include "ItlIwx.hpp"
 #include <linux/types.h>
 #include <linux/kernel.h>
@@ -7396,6 +7399,12 @@ iwx_umac_scan_fill_channels(struct iwx_softc *sc,
         
         if (c->ic_flags == 0)
             continue;
+#ifdef AIRPORT_WCL
+        if (!AirportWCL::scanChannelSelected(ic->ic_wcl_scan_channels,
+                ic->ic_wcl_scan_requested && ic->ic_wcl_scan_restricted,
+                ieee80211_chan2ieee(ic, c)))
+            continue;
+#endif
         
         channel_num = ieee80211_mhz2ieee(c->ic_freq, 0);
         if (isset(sc->sc_ucode_api,
@@ -7413,7 +7422,12 @@ iwx_umac_scan_fill_channels(struct iwx_softc *sc,
             chan->v1.iter_interval = htole16(0);
         }
         
+#ifdef AIRPORT_WCL
+        if (AirportWCL::probeChannel(n_ssids != 0,
+                c->ic_flags & IEEE80211_CHAN_PASSIVE, c->ic_flags & IEEE80211_CHAN_DFS))
+#else
         if (n_ssids != 0 && !bgscan)
+#endif
             chan->flags = htole32(1 << 0); /* select SSID 0 */
         chan++;
         nchan++;
@@ -7753,6 +7767,17 @@ iwx_umac_scan(struct iwx_softc *sc, int bgscan)
 {
     XYLog("%s\n", __FUNCTION__);
     struct ieee80211com *ic = &sc->sc_ic;
+    int scanSSIDLength = ic->ic_des_esslen;
+    const uint8_t *scanSSID = ic->ic_des_essid;
+    bool scanActive = scanSSIDLength != 0 && !bgscan;
+#ifdef AIRPORT_WCL
+    scanActive = AirportWCL::scanUsesProbes(ic->ic_wcl_scan_requested,
+        ic->ic_wcl_scan_active);
+    if (ic->ic_wcl_scan_requested) {
+        scanSSIDLength = ic->ic_wcl_scan_ssid_length;
+        scanSSID = ic->ic_wcl_scan_ssid;
+    }
+#endif
     struct iwx_host_cmd hcmd = {
         .id = iwx_cmd_id(IWX_SCAN_REQ_UMAC, IWX_LONG_GROUP, 0),
         .len = { 0, },
@@ -7797,7 +7822,7 @@ iwx_umac_scan(struct iwx_softc *sc, int bgscan)
         if (isset(sc->sc_ucode_api, IWX_UCODE_TLV_API_ADWELL_HB_DEF_N_AP))
             req->v9.adwell_default_hb_n_aps = IWX_SCAN_ADWELL_DEFAULT_HB_N_APS;
         
-        if (ic->ic_des_esslen != 0 && !bgscan)
+        if (scanActive && scanSSIDLength != 0)
             req->v7.adwell_max_budget =
             htole16(IWX_SCAN_ADWELL_MAX_BUDGET_DIRECTED_SCAN);
         else
@@ -7858,7 +7883,7 @@ iwx_umac_scan(struct iwx_softc *sc, int bgscan)
     chanparam = iwx_get_scan_req_umac_chan_param(sc, req);
     chanparam->count = iwx_umac_scan_fill_channels(sc,
                                                    (struct iwx_scan_channel_cfg_umac *)cmd_data,
-                                                   ic->ic_des_esslen != 0, bgscan);
+                                                   scanActive, bgscan);
     chanparam->flags = 0;
     
     tail_data = (uint8_t*)cmd_data + sizeof(struct iwx_scan_channel_cfg_umac) *
@@ -7875,20 +7900,20 @@ iwx_umac_scan(struct iwx_softc *sc, int bgscan)
     }
     
     /* Check if we're doing an active directed scan. */
-    if (ic->ic_des_esslen != 0 && !bgscan) {
+    if (scanActive) {
         if (isset(sc->sc_ucode_api, IWX_UCODE_TLV_API_SCAN_EXT_CHAN_VER)) {
             tail->direct_scan[0].id = IEEE80211_ELEMID_SSID;
-            tail->direct_scan[0].len = ic->ic_des_esslen;
-            memcpy(tail->direct_scan[0].ssid, ic->ic_des_essid,
-                   ic->ic_des_esslen);
+            tail->direct_scan[0].len = scanSSIDLength;
+            memcpy(tail->direct_scan[0].ssid, scanSSID,
+                   scanSSIDLength);
         } else {
             tailv1->direct_scan[0].id = IEEE80211_ELEMID_SSID;
-            tailv1->direct_scan[0].len = ic->ic_des_esslen;
-            memcpy(tailv1->direct_scan[0].ssid, ic->ic_des_essid,
-                   ic->ic_des_esslen);
+            tailv1->direct_scan[0].len = scanSSIDLength;
+            memcpy(tailv1->direct_scan[0].ssid, scanSSID,
+                   scanSSIDLength);
         }
-        req->general_flags |=
-        htole32(IWX_UMAC_SCAN_GEN_FLAGS_PRE_CONNECT);
+        if (scanSSIDLength != 0)
+            req->general_flags |= htole32(IWX_UMAC_SCAN_GEN_FLAGS_PRE_CONNECT);
     } else
         req->general_flags |= htole32(IWX_UMAC_SCAN_GEN_FLAGS_PASSIVE);
     
@@ -7928,6 +7953,17 @@ iwx_umac_scan_v12(struct iwx_softc *sc, int bgscan)
 {
     XYLog("%s\n", __FUNCTION__);
     struct ieee80211com *ic = &sc->sc_ic;
+    int scanSSIDLength = ic->ic_des_esslen;
+    const uint8_t *scanSSID = ic->ic_des_essid;
+    bool scanActive = scanSSIDLength != 0 && !bgscan;
+#ifdef AIRPORT_WCL
+    scanActive = AirportWCL::scanUsesProbes(ic->ic_wcl_scan_requested,
+        ic->ic_wcl_scan_active);
+    if (ic->ic_wcl_scan_requested) {
+        scanSSIDLength = ic->ic_wcl_scan_ssid_length;
+        scanSSID = ic->ic_wcl_scan_ssid;
+    }
+#endif
     int err = 0, async = bgscan;
     struct iwx_scan_req_umac_v12 *req;
     size_t req_len;
@@ -7956,7 +7992,7 @@ iwx_umac_scan_v12(struct iwx_softc *sc, int bgscan)
     
     req->ooc_priority = htole32(IWX_SCAN_PRIORITY_EXT_6);
     
-    if (ic->ic_des_esslen == 0 || bgscan)
+    if (!scanActive)
         gen_flags |= IWX_UMAC_SCAN_GEN_FLAGS_V2_FORCE_PASSIVE;
     
     gen_flags |= IWX_UMAC_SCAN_GEN_FLAGS_V2_PASS_ALL |
@@ -7969,7 +8005,7 @@ iwx_umac_scan_v12(struct iwx_softc *sc, int bgscan)
     general_params->adwell_default_2g = IWX_SCAN_ADWELL_DEFAULT_LB_N_APS;
     general_params->adwell_default_5g = IWX_SCAN_ADWELL_DEFAULT_HB_N_APS;
 
-    if (ic->ic_des_esslen != 0 && !bgscan)
+    if (scanActive && scanSSIDLength != 0)
         general_params->adwell_max_budget =
             cpu_to_le16(IWX_SCAN_ADWELL_MAX_BUDGET_DIRECTED_SCAN);
     else
@@ -8000,12 +8036,12 @@ iwx_umac_scan_v12(struct iwx_softc *sc, int bgscan)
     if (err)
         return err;
 
-    if (ic->ic_des_esslen != 0 && !bgscan) {
+    if (scanActive) {
         req->scan_params.probe_params.ssid_num = 1;
         req->scan_params.probe_params.direct_scan[0].id = IEEE80211_ELEMID_SSID;
-        req->scan_params.probe_params.direct_scan[0].len = ic->ic_des_esslen;
-        memcpy(req->scan_params.probe_params.direct_scan[0].ssid, ic->ic_des_essid,
-               ic->ic_des_esslen);
+        req->scan_params.probe_params.direct_scan[0].len = scanSSIDLength;
+        memcpy(req->scan_params.probe_params.direct_scan[0].ssid, scanSSID,
+               scanSSIDLength);
     } else
         req->scan_params.probe_params.ssid_num = 0;
     
@@ -8014,7 +8050,7 @@ iwx_umac_scan_v12(struct iwx_softc *sc, int bgscan)
     cp->flags = IWX_SCAN_CHANNEL_FLAG_ENABLE_CHAN_ORDER;
     cp->count = iwx_umac_scan_fill_channels(sc,
                                             (struct iwx_scan_channel_cfg_umac *)cp->channel_config,
-                                            ic->ic_des_esslen != 0, bgscan);
+                                            scanActive, bgscan);
     cp->num_of_aps_override = IWX_SCAN_ADWELL_N_APS_GO_FRIENDLY;
     
     err = iwx_send_cmd(sc, &hcmd);
@@ -8027,6 +8063,17 @@ iwx_umac_scan_v14(struct iwx_softc *sc, int bgscan)
 {
     XYLog("%s\n", __FUNCTION__);
     struct ieee80211com *ic = &sc->sc_ic;
+    int scanSSIDLength = ic->ic_des_esslen;
+    const uint8_t *scanSSID = ic->ic_des_essid;
+    bool scanActive = scanSSIDLength != 0 && !bgscan;
+#ifdef AIRPORT_WCL
+    scanActive = AirportWCL::scanUsesProbes(ic->ic_wcl_scan_requested,
+        ic->ic_wcl_scan_active);
+    if (ic->ic_wcl_scan_requested) {
+        scanSSIDLength = ic->ic_wcl_scan_ssid_length;
+        scanSSID = ic->ic_wcl_scan_ssid;
+    }
+#endif
     int err = 0, async = bgscan;
     struct iwx_scan_req_umac_v14 *req;
     size_t req_len;
@@ -8055,7 +8102,7 @@ iwx_umac_scan_v14(struct iwx_softc *sc, int bgscan)
     
     req->ooc_priority = htole32(IWX_SCAN_PRIORITY_EXT_6);
     
-    if (ic->ic_des_esslen == 0 || bgscan)
+    if (!scanActive)
         gen_flags |= IWX_UMAC_SCAN_GEN_FLAGS_V2_FORCE_PASSIVE;
     
     gen_flags |= IWX_UMAC_SCAN_GEN_FLAGS_V2_PASS_ALL |
@@ -8067,7 +8114,7 @@ iwx_umac_scan_v14(struct iwx_softc *sc, int bgscan)
         IWX_SCAN_ADWELL_DEFAULT_N_APS_SOCIAL;
     general_params->adwell_default_2g = IWX_SCAN_ADWELL_DEFAULT_LB_N_APS;
     general_params->adwell_default_5g = IWX_SCAN_ADWELL_DEFAULT_HB_N_APS;
-    if (ic->ic_des_esslen != 0 && !bgscan)
+    if (scanActive && scanSSIDLength != 0)
         general_params->adwell_max_budget =
             cpu_to_le16(IWX_SCAN_ADWELL_MAX_BUDGET_DIRECTED_SCAN);
     else
@@ -8097,11 +8144,11 @@ iwx_umac_scan_v14(struct iwx_softc *sc, int bgscan)
     err = iwx_fill_probe_req(sc, &req->scan_params.probe_params.preq);
     if (err)
         return err;
-    if (ic->ic_des_esslen != 0 && !bgscan) {
+    if (scanActive) {
         req->scan_params.probe_params.direct_scan[0].id = IEEE80211_ELEMID_SSID;
-        req->scan_params.probe_params.direct_scan[0].len = ic->ic_des_esslen;
-        memcpy(req->scan_params.probe_params.direct_scan[0].ssid, ic->ic_des_essid,
-               ic->ic_des_esslen);
+        req->scan_params.probe_params.direct_scan[0].len = scanSSIDLength;
+        memcpy(req->scan_params.probe_params.direct_scan[0].ssid, scanSSID,
+               scanSSIDLength);
     }
     
     cp = &req->scan_params.channel_params;
@@ -8109,7 +8156,7 @@ iwx_umac_scan_v14(struct iwx_softc *sc, int bgscan)
     cp->flags = IWX_SCAN_CHANNEL_FLAG_ENABLE_CHAN_ORDER;
     cp->count = iwx_umac_scan_fill_channels(sc,
                                             (struct iwx_scan_channel_cfg_umac *)cp->channel_config,
-                                            ic->ic_des_esslen != 0, bgscan);
+                                            scanActive, bgscan);
     cp->n_aps_override[0] = IWX_SCAN_ADWELL_N_APS_GO_FRIENDLY;
     cp->n_aps_override[1] = IWX_SCAN_ADWELL_N_APS_SOCIAL_CHS;
     
@@ -10246,6 +10293,10 @@ iwx_init(struct _ifnet *ifp)
     //    KASSERT(sc->task_refs.refs == 0);
     //    refcnt_init(&sc->task_refs);
     
+#ifdef AIRPORT_WCL
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_RESET_BEGIN, NULL);
+#endif
     err = iwx_init_hw(sc);
     if (err) {
         if (generation == sc->sc_generation)
@@ -10288,6 +10339,21 @@ iwx_init(struct _ifnet *ifp)
      * ieee80211_begin_scan() ends up scheduling iwx_newstate_task().
      * Wait until the transition to SCAN state has completed.
      */
+#ifdef AIRPORT_WCL
+    // The state task may finish before msleep begins, so wakeup alone is not
+    // evidence of completion. Recheck the predicate even when sleep times out.
+    while (ic->ic_state != IEEE80211_S_SCAN) {
+        err = tsleep_nsec(&ic->ic_state, PCATCH, "iwxinit", SEC_TO_NSEC(1));
+        if (generation != sc->sc_generation)
+            return ENXIO;
+        if (err && ic->ic_state != IEEE80211_S_SCAN) {
+            iwx_stop(ifp);
+            return err;
+        }
+    }
+    if (generation != sc->sc_generation)
+        return ENXIO;
+#else
     do {
         err = tsleep_nsec(&ic->ic_state, PCATCH, "iwxinit",
             SEC_TO_NSEC(1));
@@ -10298,7 +10364,12 @@ iwx_init(struct _ifnet *ifp)
             return err;
         }
     } while (ic->ic_state != IEEE80211_S_SCAN);
+#endif
     
+#ifdef AIRPORT_WCL
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_READY, NULL);
+#endif
     return 0;
 }
 
@@ -10422,6 +10493,16 @@ iwx_stop(struct _ifnet *ifp)
         sc->sc_cmd_resp_len[i] = 0;
     }
     ifp->if_flags &= ~IFF_RUNNING;
+#ifdef AIRPORT_WCL
+    // A stopped firmware scan cannot deliver its completion event.
+    ic->ic_flags &= ~(IEEE80211_F_BGSCAN | IEEE80211_F_ASCAN);
+    ic->ic_wcl_scan_requested = false;
+    ic->ic_wcl_scan_active = false;
+    ic->ic_wcl_scan_ssid_length = 0;
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_STOPPED, NULL);
+#endif
+
     ifq_clr_oactive(&ifp->if_snd);
     ifq_flush(&ifp->if_snd);
     
@@ -13223,7 +13304,19 @@ iwx_init_task(void *arg1)
         sc->sc_flags &= ~IWX_FLAG_HW_ERR;
     
     if (!fatal && (ifp->if_flags & (IFF_UP | IFF_RUNNING)) == IFF_UP)
+#ifdef AIRPORT_WCL
+    {
+        int error = that->iwx_init(ifp);
+        if (error && !(ifp->if_flags & IFF_RUNNING)) {
+            sc->sc_ic.ic_wcl_mac_reconfig = false;
+            ifp->if_flags &= ~IFF_UP;
+            if (sc->sc_ic.ic_event_handler)
+                sc->sc_ic.ic_event_handler(&sc->sc_ic, IEEE80211_EVT_DRIVER_STOPPED, NULL);
+        }
+    }
+#else
         that->iwx_init(ifp);
+#endif
     
     //    rw_exit(&sc->ioctl_rwl);
     splx(s);

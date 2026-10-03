@@ -6,6 +6,9 @@
 //  Copyright © 2019 钟先耀. All rights reserved.
 //
 
+#ifdef AIRPORT_WCL
+#include "macOS26/IO80211SkywalkInterface.h"
+#else
 #ifndef _IO80211SKYWALK_H
 #define _IO80211SKYWALK_H
 
@@ -189,3 +192,5 @@ public:
 };
 
 #endif /* _IO80211SKYWALK_H */
+
+#endif

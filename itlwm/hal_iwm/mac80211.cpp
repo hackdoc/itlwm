@@ -3475,6 +3475,10 @@ iwm_init(struct _ifnet *ifp)
     KASSERT(sc->task_refs.refs == 0, "sc->task_refs.refs == 0");
     //        refcnt_init(&sc->task_refs);
     
+#ifdef AIRPORT_WCL
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_RESET_BEGIN, NULL);
+#endif
     err = iwm_init_hw(sc);
     if (err) {
         if (generation == sc->sc_generation)
@@ -3518,6 +3522,10 @@ iwm_init(struct _ifnet *ifp)
             return err;
         }
     } while (ic->ic_state != IEEE80211_S_SCAN);
+#ifdef AIRPORT_WCL
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_READY, NULL);
+#endif
     
     return 0;
 }
@@ -3645,6 +3653,16 @@ iwm_stop(struct _ifnet *ifp)
         sc->sc_cmd_resp_len[i] = 0;
     }
     ifp->if_flags &= ~IFF_RUNNING;
+#ifdef AIRPORT_WCL
+    // Firmware scan was cancelled by stop_device; no completion will clear these.
+    // Clear software busy state before advertising the stop or starting a new scan.
+    ic->ic_flags &= ~(IEEE80211_F_BGSCAN | IEEE80211_F_ASCAN);
+    ic->ic_wcl_scan_requested = false;
+    ic->ic_wcl_scan_active = false;
+    ic->ic_wcl_scan_ssid_length = 0;
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_STOPPED, NULL);
+#endif
     ifq_flush(&ifp->if_snd);
     ifq_clr_oactive(&ifp->if_snd);
     
@@ -4949,8 +4967,27 @@ iwm_init_task(void *arg1)
     else
         sc->sc_flags &= ~IWM_FLAG_HW_ERR;
     
-    if (!fatal && (ifp->if_flags & (IFF_UP | IFF_RUNNING)) == IFF_UP)
+    if (!fatal && (ifp->if_flags & (IFF_UP | IFF_RUNNING)) == IFF_UP) {
+#ifdef AIRPORT_WCL
+        int error = that->iwm_init(ifp);
+        // One bounded retry for the observed cold-boot firmware DMA timeout.
+        // Respect a concurrent power-off/RF kill instead of bringing it back up.
+        if ((error == ETIMEDOUT || error == EWOULDBLOCK) && (ifp->if_flags & IFF_UP) &&
+            !(sc->sc_flags & (IWM_FLAG_SHUTDOWN | IWM_FLAG_RFKILL | IWM_FLAG_HW_ERR))) {
+            XYLog("WCL: retrying firmware initialization after timeout\n");
+            error = that->iwm_init(ifp);
+        }
+        if (error && !(ifp->if_flags & IFF_RUNNING)) {
+            sc->sc_ic.ic_wcl_mac_reconfig = false;
+            ifp->if_flags &= ~IFF_UP;
+            XYLog("WCL: initialization failed %d; activation can be retried\n", error);
+            if (sc->sc_ic.ic_event_handler)
+                sc->sc_ic.ic_event_handler(&sc->sc_ic, IEEE80211_EVT_DRIVER_STOPPED, NULL);
+        }
+#else
         that->iwm_init(ifp);
+#endif
+    }
     
     //    rw_exit(&sc->ioctl_rwl);
     splx(s);

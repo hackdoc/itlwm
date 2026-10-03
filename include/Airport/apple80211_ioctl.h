@@ -430,7 +430,15 @@ struct apple80211_bssid_data
     struct ether_addr    bssid;
 };
 
-#if __IO80211_TARGET >= __MAC_14_0
+#ifdef AIRPORT_WCL
+struct apple80211_capability_data
+{
+    u_int32_t    version;
+    u_int8_t     capabilities[21];
+};
+static_assert(sizeof(apple80211_capability_data) == 0x1c, "WCL capability ABI");
+static_assert(__offsetof(apple80211_capability_data, capabilities) == 4, "WCL capability offset");
+#elif __IO80211_TARGET >= __MAC_14_0
 struct apple80211_capability_data
 {
     u_int32_t    version;

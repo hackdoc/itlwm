@@ -21,6 +21,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		A112F5371BD949CD8CA19D88 /* WCL.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A112F5371BD949CD8CA19D89 /* WCL.cpp */; };
 		024A07B023FCBC3C009FBA6C /* itlwm.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 024A07AF23FCBC3C009FBA6C /* itlwm.hpp */; };
 		024A07B223FCBC3C009FBA6C /* itlwm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 024A07B123FCBC3C009FBA6C /* itlwm.cpp */; };
 		024A082E23FCBC6C009FBA6C /* aes.c in Sources */ = {isa = PBXBuildFile; fileRef = 024A07C923FCBC6C009FBA6C /* aes.c */; };
@@ -1060,6 +1061,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A112F5371BD949CD8CA19D89 /* WCL.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AirportItlwm/WCL/WCL.cpp; sourceTree = SOURCE_ROOT; };
 		024A07AC23FCBC3C009FBA6C /* itlwm.kext */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = itlwm.kext; sourceTree = BUILT_PRODUCTS_DIR; };
 		024A07AF23FCBC3C009FBA6C /* itlwm.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = itlwm.hpp; sourceTree = "<group>"; };
 		024A07B123FCBC3C009FBA6C /* itlwm.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = itlwm.cpp; sourceTree = "<group>"; };
@@ -1305,6 +1307,48 @@
 		F8F9EDE0240B7415009CB8E7 /* _task.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = _task.cpp; sourceTree = "<group>"; };
 		F8FA0EEB2501E7EE00B1822E /* zutil.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = zutil.h; sourceTree = "<group>"; };
 		F8FA0EED2501E8C100B1822E /* zutil.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = zutil.c; sourceTree = "<group>"; };
+		3FCE22CDA614FF2D176FAC46 /* AirportItlwm.kext */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AirportItlwm.kext; sourceTree = BUILT_PRODUCTS_DIR; };
+		F8E3806526D533D400568FEB /* iwlwifi-ty-a0-gf-a0.pnvm */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-ty-a0-gf-a0.pnvm"; sourceTree = "<group>"; };
+		F8E49A12249B923500BE6868 /* ItlNetworkUserClient.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ItlNetworkUserClient.cpp; sourceTree = "<group>"; };
+		F8E49A13249B923500BE6868 /* ItlNetworkUserClient.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = ItlNetworkUserClient.hpp; sourceTree = "<group>"; };
+		F8EE4D1A241786B0002FA666 /* FwData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FwData.h; sourceTree = "<group>"; };
+		F8F7EA34252D834500520FD4 /* IO80211VirtualInterface.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IO80211VirtualInterface.h; sourceTree = "<group>"; };
+		F8F7EA35252D834500520FD4 /* IO80211Controller.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IO80211Controller.h; sourceTree = "<group>"; };
+		F8F7EA36252D834500520FD4 /* IO80211P2PInterface.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IO80211P2PInterface.h; sourceTree = "<group>"; };
+		F8F7EA37252D834500520FD4 /* IO80211SkywalkInterface.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IO80211SkywalkInterface.h; sourceTree = "<group>"; };
+		F8F7EA38252D834500520FD4 /* IO80211Interface.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IO80211Interface.h; sourceTree = "<group>"; };
+		F8F7EA39252D834500520FD4 /* IO80211WorkLoop.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IO80211WorkLoop.h; sourceTree = "<group>"; };
+		F8F884F02791284800545F2C /* iwlwifi-cc-a0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-cc-a0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F12791285A00545F2C /* iwlwifi-Qu-b0-hr-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-b0-hr-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F22791286E00545F2C /* iwlwifi-Qu-b0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-b0-jf-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F32791289200545F2C /* iwlwifi-Qu-c0-hr-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-c0-hr-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F42791289C00545F2C /* iwlwifi-Qu-c0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-Qu-c0-jf-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F5279128B300545F2C /* iwlwifi-QuZ-a0-hr-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-QuZ-a0-hr-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F6279128C400545F2C /* iwlwifi-QuZ-a0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-QuZ-a0-jf-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F7279128DD00545F2C /* iwlwifi-so-a0-gf-a0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-so-a0-gf-a0-68.ucode"; sourceTree = "<group>"; };
+		F8F884F92791293C00545F2C /* iwlwifi-so-a0-gf4-a0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-so-a0-gf4-a0-68.ucode"; sourceTree = "<group>"; };
+		F8F884FA2791294B00545F2C /* iwlwifi-so-a0-hr-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-so-a0-hr-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884FB2791295D00545F2C /* iwlwifi-so-a0-jf-b0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-so-a0-jf-b0-68.ucode"; sourceTree = "<group>"; };
+		F8F884FC2791296C00545F2C /* iwlwifi-ty-a0-gf-a0-68.ucode */ = {isa = PBXFileReference; lastKnownFileType = file; path = "iwlwifi-ty-a0-gf-a0-68.ucode"; sourceTree = "<group>"; };
+		F8F92573240974EE0088B8D5 /* bitfield.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = bitfield.h; sourceTree = "<group>"; };
+		F8F92574240974EE0088B8D5 /* kernel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = kernel.h; sourceTree = "<group>"; };
+		F8F92578240974EE0088B8D5 /* random.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = random.h; sourceTree = "<group>"; };
+		F8F9257B240974EF0088B8D5 /* types.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = types.h; sourceTree = "<group>"; };
+		F8F9EDDF240B4741009CB8E7 /* _task.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = _task.h; sourceTree = "<group>"; };
+		F8F9EDE0240B7415009CB8E7 /* _task.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = _task.cpp; sourceTree = "<group>"; };
+		F8FA0EEB2501E7EE00B1822E /* zutil.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = zutil.h; sourceTree = "<group>"; };
+		F8FA0EED2501E8C100B1822E /* zutil.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = zutil.c; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		024A07A923FCBC3C009FBA6C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5088ECBD252884870068A63D /* libkmod.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -2322,6 +2366,25 @@
 			productReference = F8D94CF52B9ABFE20081A3C4 /* AirportItlwm.kext */;
 			productType = "com.apple.product-type.kernel-extension";
 		};
+		A6465A40B44EE5DC353B726B /* AirportItlwm-Tahoe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1DF97670B7FC55991F338AA4 /* Build configuration list for PBXNativeTarget "AirportItlwm-Tahoe" */;
+			buildPhases = (
+				F8D94C832B9ABFE20081A3C4 /* Headers */,
+				F8D94CA52B9ABFE20081A3C4 /* Sources */,
+				F8D94CEF2B9ABFE20081A3C4 /* Frameworks */,
+				F8D94CF12B9ABFE20081A3C4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F8D94C812B9ABFE20081A3C4 /* PBXTargetDependency */,
+			);
+			name = "AirportItlwm-Tahoe";
+			productName = AirportItlwm;
+			productReference = 3FCE22CDA614FF2D176FAC46 /* AirportItlwm.kext */;
+			productType = "com.apple.product-type.kernel-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -2388,6 +2451,7 @@
 				F8AE64F5285471560085B4CF /* AirportItlwm-Ventura */,
 				F8B210A72A2EC2680043ECBD /* AirportItlwm-Sonoma14.0 */,
 				F8D94C802B9ABFE20081A3C4 /* AirportItlwm-Sonoma14.4 */,
+				A6465A40B44EE5DC353B726B /* AirportItlwm-Tahoe */,
 				5066D63825287F7900EE6F38 /* fw_gen */,
 			);
 		};
@@ -3171,6 +3235,7 @@
 				F8D94CD02B9ABFE20081A3C4 /* arc4.c in Sources */,
 				F8D94CD12B9ABFE20081A3C4 /* AirportItlwmEthernetInterface.cpp in Sources */,
 				F8D94CD22B9ABFE20081A3C4 /* AirportItlwmSkywalkInterface.cpp in Sources */,
+				A112F5371BD949CD8CA19D88 /* WCL.cpp in Sources */,
 				F8D94CD32B9ABFE20081A3C4 /* blf.c in Sources */,
 				F8D94CD42B9ABFE20081A3C4 /* _ifq.cpp in Sources */,
 				F8D94CD52B9ABFE20081A3C4 /* poly1305.c in Sources */,
@@ -3956,6 +4021,72 @@
 			};
 			name = Release;
 		};
+		7D5753727745775F75788913 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(SYMROOT)/$(CONFIGURATION)/Tahoe";
+				CURRENT_PROJECT_VERSION = "$(MODULE_VERSION)";
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = itlwm/PrivateSPI.pch;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					AIRPORT_WCL,
+					"$(inherited)",
+					AIRPORT,
+					"__IO80211_TARGET=__MAC_26_0",
+					__PRIVATE_SPI__,
+					IO80211FAMILY_V2,
+				);
+				INFOPLIST_FILE = "AirportItlwm/WCL/Info.plist";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/itl80211",
+					"$(inherited)",
+					"$(PROJECT_DIR)/itl80211/openbsd",
+					"$(PROJECT_DIR)/itl80211/linux",
+					"$(PROJECT_DIR)/MacKernelSDK/Library/x86_64",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MODULE_NAME = com.zxystd.AirportItlwm;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zxystd.AirportItlwm;
+				PRODUCT_MODULE_NAME = AirportItlwm;
+				PRODUCT_NAME = AirportItlwm;
+				SYSTEM_HEADER_SEARCH_PATHS = "itl80211/openbsd itl80211 include";
+				WRAPPER_EXTENSION = kext;
+			};
+			name = Debug;
+		};
+		D92AB006FB4B2B6A6032F9C7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(SYMROOT)/$(CONFIGURATION)/Tahoe";
+				CURRENT_PROJECT_VERSION = "$(MODULE_VERSION)";
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = itlwm/PrivateSPI.pch;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					AIRPORT_WCL,
+					"__IO80211_TARGET=__MAC_26_0",
+					AIRPORT,
+					__PRIVATE_SPI__,
+					"$(inherited)",
+					IO80211FAMILY_V2,
+				);
+				INFOPLIST_FILE = "AirportItlwm/WCL/Info.plist";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/itl80211",
+					"$(inherited)",
+					"$(PROJECT_DIR)/itl80211/openbsd",
+					"$(PROJECT_DIR)/itl80211/linux",
+					"$(PROJECT_DIR)/MacKernelSDK/Library/x86_64",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MODULE_NAME = com.zxystd.AirportItlwm;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zxystd.AirportItlwm;
+				PRODUCT_MODULE_NAME = AirportItlwm;
+				PRODUCT_NAME = AirportItlwm;
+				SYSTEM_HEADER_SEARCH_PATHS = "itl80211/openbsd itl80211 include";
+				WRAPPER_EXTENSION = kext;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -4054,6 +4185,15 @@
 			buildConfigurations = (
 				F8D94CF32B9ABFE20081A3C4 /* Debug */,
 				F8D94CF42B9ABFE20081A3C4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1DF97670B7FC55991F338AA4 /* Build configuration list for PBXNativeTarget "AirportItlwm-Tahoe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7D5753727745775F75788913 /* Debug */,
+				D92AB006FB4B2B6A6032F9C7 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

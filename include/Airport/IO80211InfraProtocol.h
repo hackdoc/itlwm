@@ -6,6 +6,9 @@
 //  Copyright © 2023 钟先耀. All rights reserved.
 //
 
+#ifdef AIRPORT_WCL
+#include "macOS26/IO80211InfraProtocol.h"
+#else
 #ifndef IO80211InfraProtocol_h
 #define IO80211InfraProtocol_h
 
@@ -388,3 +391,5 @@ public:
 
 #endif /* IO80211InfraProtocol_h */
 
+
+#endif

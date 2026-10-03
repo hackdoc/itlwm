@@ -34,6 +34,9 @@
  * adapters.
  */
 
+#ifdef AIRPORT_WCL
+#include "../../AirportItlwm/WCL/WCL.hpp"
+#endif
 #include "ItlIwn.hpp"
 #include <linux/types.h>
 #include <linux/kernel.h>
@@ -831,7 +834,19 @@ iwn_init_task(void *arg1)
     s = splnet();
 
     if ((ifp->if_flags & (IFF_UP | IFF_RUNNING)) == IFF_UP)
+#ifdef AIRPORT_WCL
+    {
+        int error = that->iwn_init(ifp);
+        if (error && !(ifp->if_flags & IFF_RUNNING)) {
+            sc->sc_ic.ic_wcl_mac_reconfig = false;
+            ifp->if_flags &= ~IFF_UP;
+            if (sc->sc_ic.ic_event_handler)
+                sc->sc_ic.ic_event_handler(&sc->sc_ic, IEEE80211_EVT_DRIVER_STOPPED, NULL);
+        }
+    }
+#else
         that->iwn_init(ifp);
+#endif
 
     splx(s);
 //    rw_exit_write(&sc->sc_rwlock);
@@ -5371,6 +5386,17 @@ iwn_scan(struct iwn_softc *sc, uint16_t flags, int bgscan)
 {
     XYLog("%s flags=%d bgscan=%d\n", __FUNCTION__, flags, bgscan);
     struct ieee80211com *ic = &sc->sc_ic;
+    int scanSSIDLength = ic->ic_des_esslen;
+    const uint8_t *scanSSID = ic->ic_des_essid;
+    bool scanActive = scanSSIDLength != 0;
+#ifdef AIRPORT_WCL
+    scanActive = AirportWCL::scanUsesProbes(ic->ic_wcl_scan_requested,
+        ic->ic_wcl_scan_active);
+    if (ic->ic_wcl_scan_requested) {
+        scanSSIDLength = ic->ic_wcl_scan_ssid_length;
+        scanSSID = ic->ic_wcl_scan_ssid;
+    }
+#endif
     struct iwn_scan_hdr *hdr;
     struct iwn_cmd_data *tx;
     struct iwn_scan_essid *essid;
@@ -5466,10 +5492,10 @@ iwn_scan(struct iwn_softc *sc, uint16_t flags, int bgscan)
      * If we're scanning for a specific SSID, add it to the command.
      */
     essid = (struct iwn_scan_essid *)(tx + 1);
-    if (ic->ic_des_esslen != 0) {
+    if (scanActive) {
         essid[0].id = IEEE80211_ELEMID_SSID;
-        essid[0].len = ic->ic_des_esslen;
-        memcpy(essid[0].data, ic->ic_des_essid, ic->ic_des_esslen);
+        essid[0].len = scanSSIDLength;
+        memcpy(essid[0].data, scanSSID, scanSSIDLength);
 
         is_active = 1;
     }
@@ -5542,10 +5568,15 @@ iwn_scan(struct iwn_softc *sc, uint16_t flags, int bgscan)
         chan->chan = htole16(ieee80211_chan2ieee(ic, c));
         DPRINTFN(2, ("adding channel %d\n", chan->chan));
         chan->flags = 0;
-        if (ic->ic_des_esslen != 0)
+        if (scanActive)
             chan->flags |= htole32(IWN_CHAN_NPBREQS(1));
 
+        #ifdef AIRPORT_WCL
+        if (!AirportWCL::probeChannel(scanActive,
+                c->ic_flags & IEEE80211_CHAN_PASSIVE, c->ic_flags & IEEE80211_CHAN_DFS))
+#else
         if (c->ic_flags & IEEE80211_CHAN_PASSIVE)
+#endif
             chan->flags |= htole32(IWN_CHAN_PASSIVE);
         else
             chan->flags |= htole32(IWN_CHAN_ACTIVE);
@@ -7427,6 +7458,10 @@ iwn_init(struct _ifnet *ifp)
     struct ieee80211com *ic = &sc->sc_ic;
     int error;
 
+#ifdef AIRPORT_WCL
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_RESET_BEGIN, NULL);
+#endif
     memset(sc->bss_node_addr, 0, sizeof(sc->bss_node_addr));
     sc->agg_queue_mask = 0;
     memset(sc->sc_tx_ba, 0, sizeof(sc->sc_tx_ba));
@@ -7481,6 +7516,10 @@ iwn_init(struct _ifnet *ifp)
     else
         ieee80211_new_state(ic, IEEE80211_S_RUN, -1);
 
+#ifdef AIRPORT_WCL
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_READY, NULL);
+#endif
     return 0;
 
 fail:    iwn_stop(ifp);
@@ -7496,6 +7535,16 @@ iwn_stop(struct _ifnet *ifp)
     timeout_del(&sc->calib_to);
     ifp->if_timer = sc->sc_tx_timer = 0;
     ifp->if_flags &= ~IFF_RUNNING;
+#ifdef AIRPORT_WCL
+    // A stopped firmware scan cannot deliver its completion event.
+    ic->ic_flags &= ~(IEEE80211_F_BGSCAN | IEEE80211_F_ASCAN);
+    ic->ic_wcl_scan_requested = false;
+    ic->ic_wcl_scan_active = false;
+    ic->ic_wcl_scan_ssid_length = 0;
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_STOPPED, NULL);
+#endif
+
     ifq_clr_oactive(&ifp->if_snd);
 
     ieee80211_new_state(ic, IEEE80211_S_INIT, -1);
