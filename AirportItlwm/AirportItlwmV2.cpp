@@ -1319,7 +1319,7 @@ IO80211VirtualInterface* AirportItlwm::createVirtualInterface(ether_addr *ether,
     // be created here so attachVirtualInterface() can publish awdl0/p2p.
     if (role == APPLE80211_VIF_AWDL ||
         (role >= APPLE80211_VIF_P2P_DEVICE && role <= APPLE80211_VIF_P2P_GO)) {
-        IO80211VirtualInterface *inf = new IO80211VirtualInterface;
+        IO80211VirtualInterface *inf = OSTypeAlloc(IO80211VirtualInterface);
         if (inf == NULL)
             return NULL;
         const char *name = (role == APPLE80211_VIF_AWDL) ? "awdl" : "p2p";
@@ -1375,8 +1375,8 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
     if (!slot)
         return kIOReturnUnsupported;
     if (*slot) {
-        XYLog("%s role=%u already attached as %s\n", __FUNCTION__, role,
-              (*slot)->getBSDName());
+        XYLog("%s role=%u already attached vif=%p\n", __FUNCTION__, role,
+              *slot);
         return kIOReturnSuccess;
     }
 
@@ -1391,9 +1391,8 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
         return kIOReturnError;
     }
     *slot = vif;
-    XYLog("%s attached role=%u requested_name=%.*s actual_name=%s enabled=%d link=%d\n",
-          __FUNCTION__, role, IFNAMSIZ, data->bsd_name, vif->getBSDName(),
-          vif->enabledBySystem(), vif->linkState());
+    XYLog("%s attached role=%u requested_name=%.*s vif=%p\n",
+          __FUNCTION__, role, IFNAMSIZ, data->bsd_name, vif);
     return kIOReturnSuccess;
 }
 
@@ -1403,24 +1402,23 @@ IOReturn AirportItlwm::deleteVirtualInterfaceForSkywalk(
     if (!data || data->version != APPLE80211_VERSION)
         return kIOReturnBadArgument;
 
-    IO80211VirtualInterface **slots[] = {
-        &fSkywalkAWDLInterface, &fSkywalkP2PInterface
-    };
-    for (unsigned int i = 0; i < sizeof(slots) / sizeof(slots[0]); ++i) {
-        IO80211VirtualInterface **slot = slots[i];
-        if (*slot && !strncmp((*slot)->getBSDName(),
-                              (const char *)data->bsd_name, IFNAMSIZ)) {
-            IO80211VirtualInterface *vif = *slot;
-            *slot = NULL;
-            if (!detachVirtualInterface(vif, false)) {
-                *slot = vif;
-                return kIOReturnError;
-            }
-            vif->release();
-            return kIOReturnSuccess;
-        }
+    IO80211VirtualInterface **slot = NULL;
+    if (!strncmp((const char *)data->bsd_name, "awdl", 4))
+        slot = &fSkywalkAWDLInterface;
+    else if (!strncmp((const char *)data->bsd_name, "p2p", 3))
+        slot = &fSkywalkP2PInterface;
+
+    if (!slot || !*slot)
+        return kIOReturnNotFound;
+
+    IO80211VirtualInterface *vif = *slot;
+    *slot = NULL;
+    if (!detachVirtualInterface(vif, false)) {
+        *slot = vif;
+        return kIOReturnError;
     }
-    return kIOReturnNotFound;
+    vif->release();
+    return kIOReturnSuccess;
 }
 
 IOReturn AirportItlwm::enableAdapter(IONetworkInterface *netif)
