@@ -522,6 +522,9 @@ bool AirportItlwm::start(IOService *provider)
     bsdInterface->registerService();
 #endif
     registerService();
+#ifdef AIRPORT_WCL
+    ensureAWDLVirtualInterface();
+#endif
     return true;
 }
 
@@ -1401,6 +1404,36 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
     XYLog("%s attached role=%u requested_name=%.*s vif=%p\n",
           __FUNCTION__, role, IFNAMSIZ, data->bsd_name, vif);
     return kIOReturnSuccess;
+}
+
+IOReturn AirportItlwm::ensureAWDLVirtualInterface()
+{
+#ifdef AIRPORT_WCL
+    if (fSkywalkAWDLInterface) {
+        XYLog("%s AWDL interface already present slot=%p\n", __FUNCTION__, fSkywalkAWDLInterface);
+        return kIOReturnSuccess;
+    }
+    apple80211_virt_if_create_data req = {};
+    req.version = APPLE80211_VERSION;
+    req.role = APPLE80211_VIF_AWDL;
+    req.unk1 = 0;
+    strlcpy((char *)req.bsd_name, "awdl", sizeof(req.bsd_name));
+
+    ether_addr *parent = fNetIf ? fNetIf->getSelfMacAddr() : nullptr;
+    if (!parent) {
+        XYLog("%s no parent MAC for AWDL pre-create\n", __FUNCTION__);
+        return kIOReturnError;
+    }
+    memcpy(req.mac, parent->octet, sizeof(req.mac));
+    req.mac[0] = (req.mac[0] & 0xFC) | 0x02; // locally administered, unicast
+    kprintf("itlwm-p0: %s pre-creating awdl0 mac=%02x:%02x:%02x:%02x:%02x:%02x\n",
+            __FUNCTION__, req.mac[0], req.mac[1], req.mac[2], req.mac[3], req.mac[4], req.mac[5]);
+    IOReturn ret = createVirtualInterfaceForSkywalk(&req);
+    kprintf("itlwm-p0: %s result=0x%x slot=%p\n", __FUNCTION__, ret, fSkywalkAWDLInterface);
+    return ret;
+#else
+    return kIOReturnUnsupported;
+#endif
 }
 
 IOReturn AirportItlwm::deleteVirtualInterfaceForSkywalk(

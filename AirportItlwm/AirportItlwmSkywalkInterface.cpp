@@ -278,6 +278,8 @@ setVIRTUAL_IF_CREATE(apple80211_virt_if_create_data *data)
         return kIOReturnBadArgument;
     }
 
+    kprintf("itlwm-p0: %s called role=%u version=0x%x requested_name=%.*s\n",
+            __FUNCTION__, data->role, data->version, IFNAMSIZ, data->bsd_name);
     XYLog("%s version=0x%x role=%u requested_name=%.*s\n", __FUNCTION__,
           data->version, data->role, IFNAMSIZ, data->bsd_name);
 
