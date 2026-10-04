@@ -150,7 +150,6 @@ public:
     // Handle virtual interfaces through the Skywalk (macOS 13+) IO80211 path.
     IOReturn createVirtualInterfaceForSkywalk(const apple80211_virt_if_create_data *data);
     IOReturn deleteVirtualInterfaceForSkywalk(const apple80211_virt_if_delete_data *data);
-    IOReturn ensureAWDLVirtualInterface();
     // P0: trace whether the native IO80211Family drives AWDL/P2P virtual
     // interface creation through these virtuals (not through apple80211_ioctl).
     virtual IO80211VirtualInterface* createVirtualInterface(ether_addr*, unsigned int) override;
