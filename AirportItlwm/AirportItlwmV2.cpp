@@ -1194,10 +1194,9 @@ setPOWER(OSObject *object,
 
 SInt32 AirportItlwm::apple80211_ioctl(IO80211SkywalkInterface *interface,unsigned long cmd,void *data, bool b1, bool b2)
 {
-    if (!ml_at_interrupt_context())
-        kprintf("itlwm-p0: apple80211_ioctl cmd=%lu (%s) b1=%d b2=%d awdl=%d\n",
-            cmd, convertApple80211IOCTLToString((unsigned int)cmd), b1, b2,
-            (cmd >= APPLE80211_IOC_VIRTUAL_IF_CREATE && cmd <= 400));
+    kprintf("itlwm-p0: apple80211_ioctl cmd=%lu (%s) b1=%d b2=%d awdl=%d\n",
+        cmd, convertApple80211IOCTLToString((unsigned int)cmd), b1, b2,
+        (cmd >= APPLE80211_IOC_VIRTUAL_IF_CREATE && cmd <= 400));
 #ifdef AIRPORT_WCL
     return kIOReturnUnsupported;
 #else
@@ -1207,10 +1206,9 @@ SInt32 AirportItlwm::apple80211_ioctl(IO80211SkywalkInterface *interface,unsigne
 
 SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211SkywalkInterface *interface,void *data)
 {
-    if (!ml_at_interrupt_context())
-        kprintf("itlwm-p0: skywalkReq1 cmd=%d (%s) request=%u awdl=%d\n",
-            cmd, convertApple80211IOCTLToString(cmd), request,
-            (cmd >= APPLE80211_IOC_VIRTUAL_IF_CREATE && cmd <= 400));
+    kprintf("itlwm-p0: skywalkReq1 cmd=%d (%s) request=%u awdl=%d\n",
+        cmd, convertApple80211IOCTLToString(cmd), request,
+        (cmd >= APPLE80211_IOC_VIRTUAL_IF_CREATE && cmd <= 400));
 
 #if 0  // AWDL V2 Skywalk dispatch disabled: get/setAWDL_* are V1-only and
        // IO80211VirtualInterface is incomplete in the V2/WCL build
@@ -1310,10 +1308,9 @@ SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211Skywal
 
 SInt32 AirportItlwm::apple80211SkywalkRequest(UInt request,int cmd,IO80211SkywalkInterface *interface,void *data,void *)
 {
-    if (!ml_at_interrupt_context())
-        kprintf("itlwm-p0: skywalkReq2 cmd=%d (%s) request=%u awdl=%d\n",
-            cmd, convertApple80211IOCTLToString(cmd), request,
-            (cmd >= APPLE80211_IOC_VIRTUAL_IF_CREATE && cmd <= 400));
+    kprintf("itlwm-p0: skywalkReq2 cmd=%d (%s) request=%u awdl=%d\n",
+        cmd, convertApple80211IOCTLToString(cmd), request,
+        (cmd >= APPLE80211_IOC_VIRTUAL_IF_CREATE && cmd <= 400));
     return apple80211SkywalkRequest(request, cmd, interface, data);
 }
 
@@ -1353,8 +1350,12 @@ SInt32 AirportItlwm::disableVirtualInterface(IO80211VirtualInterface *interface)
 
 IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if_create_data *data)
 {
-    if (!data || data->version != APPLE80211_VERSION)
+    if (!data)
         return kIOReturnBadArgument;
+    XYLog("%s version=0x%x role=%u mac=%02x:%02x:%02x:%02x:%02x:%02x unk1=0x%x name=%.*s\n",
+          __FUNCTION__, data->version, data->role, data->mac[0], data->mac[1],
+          data->mac[2], data->mac[3], data->mac[4], data->mac[5], data->unk1,
+          IFNAMSIZ, data->bsd_name);
 
     const UInt role = data->role;
     if (role < APPLE80211_VIF_P2P_DEVICE || role >= APPLE80211_VIF_MAX) {
