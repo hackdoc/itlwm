@@ -1350,6 +1350,7 @@ SInt32 AirportItlwm::disableVirtualInterface(IO80211VirtualInterface *interface)
 
 IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if_create_data *data)
 {
+    IOLog("itlwm-awdl: createVirtualInterfaceForSkywalk enter data=%p\n", data);
     kprintf("itlwm-p0: createVirtualInterfaceForSkywalk enter data=%p\n", data);
     if (!data) {
         kprintf("itlwm-p0: createVirtualInterfaceForSkywalk no data\n");
@@ -1396,11 +1397,13 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
 
     IO80211VirtualInterface *vif = createVirtualInterface(&address, role);
     if (!vif) {
+        IOLog("itlwm-awdl: createVirtualInterface returned NULL role=%u\n", role);
         kprintf("itlwm-p0: createVirtualInterfaceForSkywalk create returned NULL role=%u\n", role);
         return kIOReturnNoMemory;
     }
 
     if (!attachVirtualInterface(&vif, &address, role, true)) {
+        IOLog("itlwm-awdl: attachVirtualInterface failed role=%u vif=%p\n", role, vif);
         kprintf("itlwm-p0: createVirtualInterfaceForSkywalk attach failed role=%u vif=%p\n", role, vif);
         XYLog("%s attachVirtualInterface failed role=%u requested_name=%.*s\n",
               __FUNCTION__, role, IFNAMSIZ, data->bsd_name);
@@ -1408,6 +1411,7 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
         return kIOReturnError;
     }
     *slot = vif;
+    IOLog("itlwm-awdl: attached role=%u vif=%p bsd=%s\n", role, vif, vif->getBSDName());
     XYLog("%s attached role=%u requested_name=%.*s vif=%p\n",
           __FUNCTION__, role, IFNAMSIZ, data->bsd_name, vif);
     return kIOReturnSuccess;
