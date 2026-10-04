@@ -30,7 +30,7 @@ reaches the driver's `setVIRTUAL_IF_CREATE` implementation.
 
 ## Candidate minimal patch
 
-The immediate operand of the `cmpl` at VM/file offset `0x105718` is:
+The immediate operand of the `cmpl` at VM/file offset `0x105717` is:
 
 ```text
 old: 0f 28 82 e0       ; 0xe082280f
