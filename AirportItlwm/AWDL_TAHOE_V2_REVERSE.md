@@ -65,3 +65,19 @@ from the Tahoe class layout before changing the driver.
 Do not deploy another AWDL kext until the native gate and enable slots are
 identified. The stable EFI state is the original Tahoe V2 kext with no AWDL
 OpenCore patch; its Tahoe binary hash is recorded in the task history.
+
+## Vtable calibration warning
+
+The offsets used by `attachVirtualInterface` are raw vtable offsets, not
+source-level method numbers. A first symbol-table comparison shows that
+blindly labeling `vtable + 0xdd8` as a named readiness method is unsafe: the
+current `IO80211VirtualInterface` vtable layout contains inherited Skywalk
+slots, reserved slots, and ABI-specific entries. The address observed at the
+corresponding raw slot resolves near
+`IO80211SkywalkInterface::destroyEventPipe`, which has an incompatible
+source-level signature if interpreted directly. This means the vtable base,
+subobject adjustment, or slot mapping still needs calibration.
+
+The next reverse-engineering step is therefore to recover the complete
+`IO80211VirtualInterface` vtable start and compare the raw slot sequence with
+the class declarations before assigning names to `0xdd8` or `0x5b0`.
