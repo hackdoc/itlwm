@@ -1350,8 +1350,11 @@ SInt32 AirportItlwm::disableVirtualInterface(IO80211VirtualInterface *interface)
 
 IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if_create_data *data)
 {
-    if (!data)
+    kprintf("itlwm-p0: createVirtualInterfaceForSkywalk enter data=%p\n", data);
+    if (!data) {
+        kprintf("itlwm-p0: createVirtualInterfaceForSkywalk no data\n");
         return kIOReturnBadArgument;
+    }
     XYLog("%s version=0x%x role=%u mac=%02x:%02x:%02x:%02x:%02x:%02x unk1=0x%x name=%.*s\n",
           __FUNCTION__, data->version, data->role, data->mac[0], data->mac[1],
           data->mac[2], data->mac[3], data->mac[4], data->mac[5], data->unk1,
@@ -1359,6 +1362,7 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
 
     const UInt role = data->role;
     if (role < APPLE80211_VIF_P2P_DEVICE || role >= APPLE80211_VIF_MAX) {
+        kprintf("itlwm-p0: createVirtualInterfaceForSkywalk invalid role=%u\n", role);
         XYLog("%s invalid role=%u requested_name=%.*s\n", __FUNCTION__, role,
               IFNAMSIZ, data->bsd_name);
         return kIOReturnBadArgument;
@@ -1379,19 +1383,25 @@ IOReturn AirportItlwm::createVirtualInterfaceForSkywalk(const apple80211_virt_if
              role == APPLE80211_VIF_P2P_GO)
         slot = &fSkywalkP2PInterface;
 
-    if (!slot)
+    if (!slot) {
+        kprintf("itlwm-p0: createVirtualInterfaceForSkywalk no slot role=%u\n", role);
         return kIOReturnUnsupported;
+    }
     if (*slot) {
+        kprintf("itlwm-p0: createVirtualInterfaceForSkywalk existing slot=%p\n", *slot);
         XYLog("%s role=%u already attached vif=%p\n", __FUNCTION__, role,
               *slot);
         return kIOReturnSuccess;
     }
 
     IO80211VirtualInterface *vif = createVirtualInterface(&address, role);
-    if (!vif)
+    if (!vif) {
+        kprintf("itlwm-p0: createVirtualInterfaceForSkywalk create returned NULL role=%u\n", role);
         return kIOReturnNoMemory;
+    }
 
     if (!attachVirtualInterface(&vif, &address, role, true)) {
+        kprintf("itlwm-p0: createVirtualInterfaceForSkywalk attach failed role=%u vif=%p\n", role, vif);
         XYLog("%s attachVirtualInterface failed role=%u requested_name=%.*s\n",
               __FUNCTION__, role, IFNAMSIZ, data->bsd_name);
         vif->release();
