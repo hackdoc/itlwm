@@ -30,6 +30,26 @@ reaches the driver's `setVIRTUAL_IF_CREATE` implementation.
 
 ## Candidate minimal patch
 
+The four-byte sequence is not unique in the binary, so an OpenCore patch must
+use a larger function-local anchor. The 115-byte prefix from the function
+start through the compare immediate is unique in the current x86_64 slice
+(`count = 1`). The generated OpenCore entry is:
+
+```text
+Identifier: com.apple.iokit.IO80211Family
+Arch: x86_64
+MinKernel: 25.0.0
+MaxKernel: ""
+Count: 1
+Find:    554889e541574156534883ec18488b057c7a1c00488b00488945e0b81600000083791820754f4989ce488b49204885c974434889f3488b8620010000488bb8d80000004885ff744c4c8d7ddf41c6070041b820000000bec8692880ba5e0000004d89f9e868bbf0ff41f6070174223d0f2882e0
+Replace: 554889e541574156534883ec18488b057c7a1c00488b00488945e0b81600000083791820754f4989ce488b49204885c974434889f3488b86200100004885ff744c4c8d7ddf41c6070041b820000000bec8692880ba5e0000004d89f9e868bbf0ff41f6070174223dc20200e0
+Mask:    fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+```
+
+The `Mask` above is all `ff` and has the same length as `Find` (115 bytes).
+Do not shorten the `Find` to the four-byte immediate: that sequence occurs
+437 times in this binary.
+
 The immediate operand of the `cmpl` at VM/file offset `0x105717` is:
 
 ```text
