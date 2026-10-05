@@ -31,9 +31,15 @@ jobs:
       - name: Build itlwm and every AirportItlwm target
         env:
           CONFIGURATION: ${{ matrix.configuration }}
+          TAHOE_TARGET: AirportItlwm-Tahoe
         run: |
           set -euo pipefail
           mkdir -p logs
+          xcodebuild -project itlwm.xcodeproj -target "$TAHOE_TARGET" \
+            -configuration "$CONFIGURATION" -jobs 3 ARCHS=x86_64 \
+            SYMROOT="$PWD/build/products" OBJROOT="$PWD/build/obj" \
+            CODE_SIGNING_ALLOWED=NO GIT_COMMIT="_$(git rev-parse --short HEAD)" \
+            build > "logs/$TAHOE_TARGET.log" 2>&1 || { tail -100 "logs/$TAHOE_TARGET.log"; exit 1; }
           for scheme in itlwm 'AirportItlwm (all)'; do
             xcodebuild -project itlwm.xcodeproj -scheme "$scheme" \
               -configuration "$CONFIGURATION" -jobs 3 ARCHS=x86_64 \
@@ -121,4 +127,3 @@ jobs:
               gh release delete "$old_tag" --yes --cleanup-tag
             fi
           done < prereleases.txt
-
